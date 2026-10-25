@@ -17,16 +17,32 @@ replace_if_changed() {
 	fi
 }
 
-# pacman: the installed-package DB ships with /usr so it always describes
-# the image (ParticleOS ships only local/ too). DBPath stays Arch's default
-# /var/lib/pacman: its lock and repo indexes must be writable on the box,
-# and tmpfiles links /var/lib/pacman/local back to /usr/lib/pacman/local.
-# Only a fresh build moves it; caeoma-update binds /usr/lib/pacman/local
-# over it in the tree, and its leftover mount point goes with /var below.
-if [ ! -e /usr/lib/pacman/local ]; then
-	mkdir --parents /usr/lib/pacman
-	mv --no-target-directory /var/lib/pacman/local /usr/lib/pacman/local
-fi
+# Image state rules (/usr/lib/caeoma/state): read once, before anything
+# changes, so a broken rule file stops the build here.
+rules="$(/usr/lib/caeoma/state)"
+
+# carry: state describing the image moves into /usr/lib/sysimage (e.g.
+# pacman's installed-package DB; DBPath stays /var/lib/pacman for the
+# writable lock and repo indexes). Only a fresh build has the real thing
+# here: caeoma-update binds the sysimage copy over it in the tree, and the
+# leftover mount point goes with the drops below.
+while read -r verb path; do
+	[ "$verb" = carry ] || continue
+	target="/usr/lib/sysimage/${path#/var/lib/}"
+	if [ -e "$target" ]; then
+		# The impermanence pitfall: binding over real content hides it.
+		if [ -d "$path" ] && [ ! -L "$path" ] \
+			&& [ -n "$(find "$path" -mindepth 1 -print -quit)" ]; then
+			echo "carry $path: both $path and $target have content" >&2
+			exit 1
+		fi
+		continue
+	fi
+	if [ -e "$path" ]; then
+		mkdir --parents "$(dirname "$target")"
+		mv --no-target-directory "$path" "$target"
+	fi
+done <<< "$rules"
 # The build's keyring holds a private lsign key: never ship it.
 rm --recursive --force /etc/pacman.d/gnupg
 
@@ -71,6 +87,8 @@ is_machine_state() {
 	.pwd.lock|passwd|passwd-|shadow|shadow-|group|group-|gshadow|gshadow-) ;;
 	machine-id|hostname|localtime|locale.conf|vconsole.conf|crypttab) ;;
 	resolv.conf|ld.so.cache|pam.d|pam.d/*|pacman.d/gnupg|pacman.d/gnupg/*) ;;
+	# The box's own caeoma config (local state.d, glue URL).
+	caeoma|caeoma/*) ;;
 	*) return 1 ;;
 	esac
 }
@@ -179,19 +197,58 @@ rm --force /usr/share/factory/boot/EFI/Linux/*.efi
 mkdir --parents /boot
 find /boot -mindepth 1 -delete
 
-# The image's /var is never mounted (/var comes from @system): leave it
-# empty, as ParticleOS drops it by shipping /usr only. A mount below /var
-# belongs to the builder (mkosi binds its scratch dir on /var/tmp): skip a
-# mount point itself, refuse to delete anything that contains one.
-for entry in /var/* /var/.[!.]*; do
-	[ -e "$entry" ] || [ -L "$entry" ] || continue
-	if mountpoint --quiet "$entry"; then
-		continue
-	fi
+# drop: never in the image (vendor: the image's /var, as ParticleOS drops
+# it by shipping /usr only). Every match of every rule is checked before
+# anything is removed, so a bad rule fails the build or update untouched.
+# A mount belongs to the builder (mkosi binds its scratch dir on /var/tmp):
+# a mount point itself is skipped, anything containing one refused.
+# Nothing at, above or inside a protected tree; nothing at or above a core
+# directory, nor directly in /usr, /usr/bin, /usr/lib (libc, the loader and
+# the binaries are those entries): a rule must not make the image unbootable.
+protected_trees=(/usr/lib/systemd /usr/lib/modules /usr/lib/caeoma
+	/usr/lib/sysimage /usr/lib/os-release /usr/share/factory /boot)
+core_dirs=(/usr /usr/bin /usr/lib /etc)
+whole_dirs=(/usr /usr/bin /usr/lib)
+
+# Fails with the reason when <entry> must not be dropped.
+check_drop() {
+	local entry="$1" p
+	for p in "${protected_trees[@]}" "${core_dirs[@]}"; do
+		case "$p/" in
+		"$entry/"*) echo "drop $entry: would remove $p" >&2; return 1 ;;
+		esac
+	done
+	for p in "${protected_trees[@]}"; do
+		case "$entry" in
+		"$p/"*) echo "drop $entry: inside protected $p" >&2; return 1 ;;
+		esac
+	done
+	for p in "${whole_dirs[@]}"; do
+		if [ "$(dirname "$entry")" = "$p" ]; then
+			echo "drop $entry: an entry of $p itself" >&2
+			return 1
+		fi
+	done
 	if findmnt --list --noheadings --output TARGET | grep --quiet "^$entry/"; then
-		echo "Mounted below $entry, not emptying /var:" >&2
-		findmnt --list --output TARGET,SOURCE | grep "^$entry/" >&2
-		exit 1
+		echo "drop $entry: something is mounted below it" >&2
+		return 1
 	fi
+}
+
+drops=()
+shopt -s dotglob nullglob
+while read -r verb pattern; do
+	[ "$verb" = drop ] || continue
+	# Unquoted on purpose: the pattern is a glob.
+	for entry in $pattern; do
+		if mountpoint --quiet "$entry"; then
+			continue
+		fi
+		check_drop "$entry" || exit 1
+		drops+=("$entry")
+	done
+done <<< "$rules"
+shopt -u dotglob nullglob
+for entry in "${drops[@]}"; do
 	rm --recursive --force "$entry"
 done

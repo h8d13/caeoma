@@ -2,6 +2,5 @@ enable systemd-networkd.service
 enable systemd-resolved.service
 enable systemd-timesyncd.service
 enable caeoma-pacman-init.service
-enable var-lib-pacman-local.mount
 enable systemd-sysext.service
 enable caeoma-sysext-anchor.service

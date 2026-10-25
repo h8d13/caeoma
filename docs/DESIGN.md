@@ -7,7 +7,7 @@ flowchart TD
 	subgraph BUILD["mkosi build (host)"]
 		P["mkosi.postinst.chroot<br/>mirrorlist, cmdline"]
 		PI["scripts/postinst<br/>os-release (IMAGE_VERSION)<br/>sd-boot to factory ESP<br/>build-uki: mkinitcpio + ukify"]
-		F["scripts/finalize<br/>vendor config into /usr<br/>bake presets, sync factory /etc<br/>gen caeoma-etc.conf, empty /var /boot"]
+		F["scripts/finalize<br/>vendor config into /usr<br/>bake presets, sync factory /etc<br/>gen caeoma-etc.conf, empty /boot<br/>state rules: carry into /usr/lib/sysimage, drop"]
 		R["mkosi.repart<br/>esp.raw + whole tree as erofs"]
 		PO["mkosi.postoutput + install.repart<br/>assemble disk.raw"]
 		P --> PI --> F --> R --> PO
@@ -41,7 +41,7 @@ flowchart TD
 
 	subgraph RUN["Running system"]
 		ETC["tmpfiles: /etc L links<br/>to /usr/share/factory/etc"]
-		PAC["var-lib-pacman-local.mount<br/>/usr/lib/pacman/local bound on /var/lib/pacman/local"]
+		PAC["caeoma-state-generator (carry rules)<br/>/usr/lib/sysimage/pacman/local bound on /var/lib/pacman/local"]
 		SX["systemd-sysext Mutable=ephemeral<br/>anchor ext in /run<br/>writable /usr, lost at reboot"]
 		SX --> PAC
 	end
@@ -59,9 +59,9 @@ flowchart TD
 	OV --> G{"glue in /var/lib/caeoma?"}
 	G -- yes --> GC["copy_changed<br/>mkosi.extra + scripts"]
 	G -- no --> MB
-	GC --> MB["bind host /proc /sys /dev /run<br/>keyring, resolv.conf, sync DBs, pkg cache<br/>local DB bound from tree /usr"]
+	GC --> MB["bind host /proc /sys /dev /run<br/>keyring, resolv.conf, sync DBs, pkg cache<br/>carry paths bound from tree /usr/lib/sysimage"]
 	MB --> PM["pacman --sysroot tree -Syu ..."]
-	PM --> CH["chroot: postinst (new os-release + UKI)<br/>chroot: finalize (re-freeze, idempotent)"]
+	PM --> CH["chroot: postinst (new os-release + UKI)<br/>chroot: finalize (re-freeze, idempotent)<br/>with the box's /etc/caeoma state.d rules"]
 	CH --> SQ{"--squash?"}
 	SQ -- yes --> FULL["mkfs.erofs full image<br/>from merged view"]
 	SQ -- no --> EO["expand_opaque<br/>opaque dirs to whiteouts"]

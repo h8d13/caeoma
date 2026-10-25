@@ -1,0 +1,50 @@
+#!/bin/bash
+# Print the image state rules, one "<verb> <path>" per line, merged from
+# state.d/*.conf in /usr/lib/caeoma (vendor) and /etc/caeoma (local; wins
+# over a vendor file of the same name), in file name order. Verbs:
+#
+#   carry /var/lib/<x>   state that describes the image (e.g. a package DB):
+#                        shipped as /usr/lib/sysimage/<x>, bound back
+#   drop  <glob>         never in the image; re-applied on every update
+#
+# Prior art: rpm-ostree / Fedora keep the RPM DB in /usr/lib/sysimage,
+# NixOS impermanence generates bind mounts from path lists, SteamOS reads
+# /etc/atomic-update.conf.d fragments.
+
+set -eu
+shopt -s nullglob
+
+declare -A files
+for dir in /usr/lib/caeoma/state.d /etc/caeoma/state.d; do
+	for f in "$dir"/*.conf; do
+		files["${f##*/}"]="$f"
+	done
+done
+
+[ "${#files[@]}" -gt 0 ] || exit 0
+
+printf '%s\n' "${!files[@]}" | sort | while IFS= read -r name; do
+	sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "${files[$name]}" \
+		| while read -r verb path rest; do
+			where="${files[$name]}: $verb $path"
+			if [ -n "$rest" ]; then
+				echo "$where: unexpected '$rest'" >&2
+				exit 1
+			fi
+			case "$path" in
+			/*) ;;
+			*) echo "$where: path must be absolute" >&2; exit 1 ;;
+			esac
+			case "$verb" in
+			carry)
+				case "$path" in
+				/var/lib/?*) ;;
+				*) echo "$where: carry is for /var/lib/<x>" >&2; exit 1 ;;
+				esac
+				;;
+			drop) ;;
+			*) echo "$where: unknown verb" >&2; exit 1 ;;
+			esac
+			echo "$verb $path"
+		done
+done

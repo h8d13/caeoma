@@ -55,8 +55,9 @@ fetch_glue() {
 # Unmounting in reverse mount order; safe to call at any point.
 cleanup() {
 	local m
-	for m in var/lib/pacman/local var/lib/pacman/sync var/cache/pacman/pkg \
-		etc/resolv.conf etc/pacman.d/gnupg run dev sys proc; do
+	for m in etc/caeoma "${carried[@]}" var/lib/pacman/sync \
+		var/cache/pacman/pkg etc/resolv.conf etc/pacman.d/gnupg \
+		run dev sys proc; do
 		if mountpoint --quiet "$work/mnt/$m"; then
 			umount --recursive "$work/mnt/$m"
 		fi
@@ -90,12 +91,6 @@ umount_api() {
 # The indexes are shared with the box's own pacman -Sy.
 mount_pacman() {
 	local d
-	# Installs land in the image's own package DB (finalize empties /var).
-	# A bind, not the box's symlink: libalpm replaces a symlinked local/
-	# with a fresh directory holding only the new entries.
-	mkdir --parents "$work/mnt/var/lib/pacman/local"
-	mount --bind "$work/mnt/usr/lib/pacman/local" \
-		"$work/mnt/var/lib/pacman/local"
 	for d in var/lib/pacman/sync var/cache/pacman/pkg; do
 		mkdir --parents "/$d" "$work/mnt/$d"
 		mount --bind "/$d" "$work/mnt/$d"
@@ -108,9 +103,41 @@ mount_pacman() {
 }
 
 umount_pacman() {
-	umount "$work/mnt/var/lib/pacman/local" "$work/mnt/var/lib/pacman/sync" \
-		"$work/mnt/var/cache/pacman/pkg" \
+	umount "$work/mnt/var/lib/pacman/sync" "$work/mnt/var/cache/pacman/pkg" \
 		"$work/mnt/etc/resolv.conf" "$work/mnt/etc/pacman.d/gnupg"
+}
+
+# carry rules (/usr/lib/caeoma/state): the tree's /usr/lib/sysimage/<x> on
+# /var/lib/<x>, as on the box, so pacman (or another) writes into the
+# image's own DB. Unmounted after finalize, which drops the mount points.
+carried=()
+mount_carried() {
+	local verb path rules
+	rules="$(/usr/lib/caeoma/state)"
+	while read -r verb path; do
+		[ "$verb" = carry ] || continue
+		[ -d "$work/mnt/usr/lib/sysimage/${path#/var/lib/}" ] || continue
+		mkdir --parents "$work/mnt$path"
+		mount --bind "$work/mnt/usr/lib/sysimage/${path#/var/lib/}" \
+			"$work/mnt$path"
+		carried+=("${path#/}")
+	done <<< "$rules"
+}
+
+umount_carried() {
+	local m
+	for m in "${carried[@]}"; do
+		umount "$work/mnt/$m"
+	done
+	carried=()
+}
+
+# The box's /etc/caeoma (local state.d rules) for finalize in the tree;
+# finalize keeps it out of factory as machine state.
+mount_local_config() {
+	[ -d /etc/caeoma ] || return 0
+	mkdir --parents "$work/mnt/etc/caeoma"
+	mount --bind -o ro /etc/caeoma "$work/mnt/etc/caeoma"
 }
 
 # Copy files of tree $1 into $2 that are new or differ: rewriting an
@@ -225,12 +252,20 @@ fi
 
 mount_api
 mount_pacman
+mount_carried
 pacman --sysroot "$work/mnt" "$@"
 umount_pacman
+# Off before finalize: a bound /var/lib/<x> shows content next to its
+# sysimage copy, which finalize refuses as a conflict.
+umount_carried
 
 chroot "$work/mnt" env IMAGE_ID="$IMAGE_ID" IMAGE_VERSION="$version" \
 	/usr/lib/caeoma/postinst /uki.efi
+mount_local_config
 chroot "$work/mnt" /usr/lib/caeoma/finalize
+if mountpoint --quiet "$work/mnt/etc/caeoma"; then
+	umount "$work/mnt/etc/caeoma"
+fi
 mv "$work/mnt/uki.efi" "$next.efi"
 umount_api
 
