@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+# What a UKI will boot: its sections, os-release (which names the erofs the
+# initrd mounts), cmdline and kernel version, and the os-release files
+# inside its initrd. Needs pefile, zstd and cpio: run it in the tools tree,
+#
+#   mkosi box -- utils/uki-inspect mkosi.output/caeoma_<ver>.efi [--files]
+#
+# --files also lists every file in the initrd.
+
+import os
+import subprocess
+import sys
+import tempfile
+
+import pefile
+
+
+def section_data(section):
+	# Without the zero padding up to the raw section size.
+	return section.get_data()[:section.Misc_VirtualSize]
+
+
+def initrd_cpio(initrd):
+	# mkinitcpio: an uncompressed early cpio, then the zstd main image.
+	start = initrd.find(b"\x28\xb5\x2f\xfd", initrd.find(b"TRAILER!!!"))
+	if start < 0:
+		sys.exit("no zstd archive found in .initrd")
+	return subprocess.run(["zstd", "-dc"],
+		input=initrd[start:].rstrip(b"\0"),
+		capture_output=True, check=True).stdout
+
+
+def main():
+	if len(sys.argv) < 2:
+		sys.exit(__doc__ or "usage: uki-inspect <uki.efi> [--files]")
+	uki = sys.argv[1]
+	list_files = "--files" in sys.argv[2:]
+
+	pe = pefile.PE(uki, fast_load=True)
+	sections = {s.Name.rstrip(b"\0").decode(): s for s in pe.sections}
+
+	print("=== sections")
+	for name, s in sections.items():
+		print(f"{name:10} {s.Misc_VirtualSize:>12} bytes")
+	for name in (".osrel", ".cmdline", ".uname"):
+		if name in sections:
+			print(f"=== {name}")
+			print(section_data(sections[name]).decode().rstrip("\0\n"))
+
+	cpio = initrd_cpio(section_data(sections[".initrd"]))
+	wanted = ["etc/initrd-release", "etc/os-release",
+		"usr/lib/os-release", "etc/hostname"]
+	with tempfile.TemporaryDirectory() as root:
+		subprocess.run(["cpio", "-idm", "--quiet", "-D", root, *wanted],
+			input=cpio, check=False)
+		for path in wanted:
+			full = os.path.join(root, path)
+			if os.path.islink(full):
+				print(f"=== initrd:{path} -> {os.readlink(full)}")
+			elif os.path.exists(full):
+				print(f"=== initrd:{path}")
+				print(open(full).read().rstrip("\n"))
+			else:
+				print(f"=== initrd:{path} (absent)")
+
+	if list_files:
+		print("=== initrd files")
+		print(subprocess.run(["cpio", "-t", "--quiet"], input=cpio,
+			capture_output=True, check=True).stdout.decode().rstrip("\n"))
+
+
+main()
