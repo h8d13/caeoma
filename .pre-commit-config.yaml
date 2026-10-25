@@ -1,0 +1,10 @@
+# pre-commit install; pre-commit run --all-files
+# Shell files by shebang or .sh (identify), shellcheck from the system.
+repos:
+  - repo: local
+    hooks:
+      - id: shellcheck
+        name: shellcheck
+        entry: shellcheck --external-sources
+        language: system
+        types: [shell]

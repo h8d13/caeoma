@@ -3,6 +3,7 @@
 # whiteouts). Box-side pacman, /etc links and CA trust, delta size, COW,
 # package DB integrity, cache cleanup.
 
+# shellcheck source=test-lib.sh
 . /root/tests/test-lib.sh
 . /usr/lib/os-release
 

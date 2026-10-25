@@ -1,0 +1,5 @@
+# Test bodies are single-quoted on purpose: test_expect_success evals them
+# (SC2016), so helpers called only from bodies look unused (SC2329).
+disable=SC2016,SC2329
+# Lets `# shellcheck source=test-lib.sh` hints resolve from tests/.
+source-path=SCRIPTDIR

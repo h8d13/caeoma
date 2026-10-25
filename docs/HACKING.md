@@ -7,11 +7,11 @@ Everything should be derived from capabilities:
 `ImageId=foo` builds the whole tree with templated `__NAME__`
 pre-stamps (`scripts/render`: paths, contents, symlink targets).
 Scripts read `$IMAGE_ID` instead; units and other static names live
-in `tree/` with `__NAME__`. `tree/` lands on `/`, `scripts/` in
-`/usr/lib/__NAME__`. A new name is a fresh install.
+in `tree/` with `__NAME__`. `tree/` lands on `/`.
 
-`tests/t0100-glue.sh` renders the repo for another id and fails on any
-leftover of the default one.
+`scripts/` in `/usr/lib/__NAME__`.
+
+A new name is a **fresh install**.
 
 ## Inside
 
@@ -26,3 +26,7 @@ A new image should be able to sync `scripts/` when they move:
 `scripts/install-glue` keeps a list of what it installed
 (`/usr/lib/__NAME__/glue.list`) and removes what a later glue no longer
 has. Rename or move freely, no shims left behind.
+
+## Shell-check
+
+Inline ignores, unless repeated several times then top-level ignore once.

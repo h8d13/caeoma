@@ -3,6 +3,7 @@
 # works live and is gone after reboot; /opt persists; the update still
 # stages a permanent version.
 
+# shellcheck source=test-lib.sh
 . /root/tests/test-lib.sh
 
 if test_stage 1; then

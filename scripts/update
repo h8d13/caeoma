@@ -22,6 +22,8 @@
 set -eu
 
 . /usr/lib/os-release
+# The glue scripts (state, install-glue, postinst, finalize) take it.
+export IMAGE_ID
 
 state="/var/lib/$IMAGE_ID"
 glue_url_file="/etc/$IMAGE_ID/glue-url"
@@ -113,7 +115,7 @@ umount_pacman() {
 carried=()
 mount_carried() {
 	local verb path rules
-	rules="$(IMAGE_ID="$IMAGE_ID" "/usr/lib/$IMAGE_ID/state")"
+	rules="$("/usr/lib/$IMAGE_ID/state")"
 	while read -r verb path; do
 		[ "$verb" = carry ] || continue
 		[ -d "$work/mnt/usr/lib/sysimage/${path#/var/lib/}" ] || continue
@@ -226,8 +228,7 @@ mount -t overlay overlay \
 	"$work/mnt"
 
 if [ -d "$state/glue" ]; then
-	IMAGE_ID="$IMAGE_ID" "$state/glue/scripts/install-glue" "$state/glue" \
-		"$work/mnt"
+	"$state/glue/scripts/install-glue" "$state/glue" "$work/mnt"
 fi
 
 mount_api
@@ -239,10 +240,10 @@ umount_pacman
 # sysimage copy, which finalize refuses as a conflict.
 umount_carried
 
-chroot "$work/mnt" env IMAGE_ID="$IMAGE_ID" IMAGE_VERSION="$version" \
+chroot "$work/mnt" env IMAGE_VERSION="$version" \
 	"/usr/lib/$IMAGE_ID/postinst" /uki.efi
 mount_local_config
-chroot "$work/mnt" env IMAGE_ID="$IMAGE_ID" "/usr/lib/$IMAGE_ID/finalize"
+chroot "$work/mnt" "/usr/lib/$IMAGE_ID/finalize"
 if mountpoint --quiet "$work/mnt/etc/$IMAGE_ID"; then
 	umount "$work/mnt/etc/$IMAGE_ID"
 fi

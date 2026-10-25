@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # git-style test library, sourced by tests/tNNNN-*.sh: t0NNN on the host
 # (they set TEST_STATE), the rest inside a VM (tests/vm-run sets TEST_VM).
 # Prints TAP on stdout; the plan comes last ("1..N"), as TAP allows, since

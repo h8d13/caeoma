@@ -7,8 +7,9 @@
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 TEST_STATE="$(mktemp --directory)"
 trap 'rm --recursive --force "$TEST_STATE"' EXIT
+# shellcheck source=test-lib.sh
 . "$repo/tests/test-lib.sh"
-cd "$TEST_STATE"
+cd "$TEST_STATE" || exit 1
 export IMAGE_ID=foo
 
 mkdir -p src/tree/usr/lib/__NAME__ src/scripts

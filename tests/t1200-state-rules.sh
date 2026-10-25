@@ -2,6 +2,7 @@
 # Image state rules (the state script): vendor carry/drop in a built
 # image, a local drop rule applied by the update, and the refusals.
 
+# shellcheck source=test-lib.sh
 . /root/tests/test-lib.sh
 . /usr/lib/os-release
 

@@ -8,6 +8,7 @@
 # which the update answers with a full image (the fallback test).
 # Re-run after erofs-utils upgrades.
 
+# shellcheck source=test-lib.sh
 . /root/tests/test-lib.sh
 
 w=/var/tmp/erofs-incremental
