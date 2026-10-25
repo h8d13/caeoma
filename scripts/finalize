@@ -246,7 +246,8 @@ while read -r verb pattern; do
 	[ "$verb" = drop ] || continue
 	# Unquoted on purpose: the pattern is a glob.
 	for entry in $pattern; do
-		if mountpoint --quiet "$entry"; then
+		# mountpoint follows links: /var/run -> ../run is a mount.
+		if [ ! -L "$entry" ] && mountpoint --quiet "$entry"; then
 			continue
 		fi
 		check_drop "$entry" || exit 1
