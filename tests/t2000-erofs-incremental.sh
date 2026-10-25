@@ -1,11 +1,11 @@
 #!/bin/bash
-# What caeoma-update relies on from mkfs.erofs --incremental: an overlay
+# What the update relies on from mkfs.erofs --incremental: an overlay
 # upper appended to a reflinked copy of the lower image equals the merged
 # view. metacopy=off, --ovlfs-strip=1 (whiteouts become deletions), opaque
 # dirs expanded to whiteouts first (mkfs.erofs ignores the xattr). Images
-# are 48bit, as caeoma-update builds its full images: without it the root
+# are 48bit, as the update builds its full images: without it the root
 # inode nid is 16 bits and a changed root dir can make --incremental fail,
-# which caeoma-update answers with a full image (the fallback test).
+# which the update answers with a full image (the fallback test).
 # Re-run after erofs-utils upgrades.
 
 . /root/tests/test-lib.sh
@@ -23,7 +23,7 @@ manifest() {
 	(cd "$1" && find . -type f -print0 | sort -z | xargs -0 sha256sum)
 }
 
-# Same as caeoma-update's expand_opaque, on <upper> over <lower>.
+# Same as the update's expand_opaque, on <upper> over <lower>.
 expand_opaque() {
 	local upper="$1" lower="$2" dir rel entry
 	getfattr --absolute-names --recursive --physical --no-dereference --dump \
@@ -136,7 +136,7 @@ test_expect_success 'appended rounds share the base extents' '
 '
 test_info btrfs filesystem du base.erofs v1.erofs v2.erofs
 
-# caeoma-update's fallback when --incremental fails: the upper (whiteouts
+# The update's fallback when --incremental fails: the upper (whiteouts
 # expanded) as top lower layer over the old image, built as a full image.
 test_expect_success 'fallback full image equals the merged view' '
 	mkdir -p fallback.mnt fallback.check &&

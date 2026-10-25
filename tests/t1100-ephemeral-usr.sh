@@ -1,13 +1,13 @@
 #!/bin/bash
 # Throwaway writable /usr (sysext Mutable=ephemeral): pacman -S on the box
-# works live and is gone after reboot; /opt persists; caeoma-update still
+# works live and is gone after reboot; /opt persists; the update still
 # stages a permanent version.
 
 . /root/tests/test-lib.sh
 
 if test_stage 1; then
 	test_expect_success '/usr is merged with the ephemeral anchor' '
-		systemd-sysext status | grep "^/usr .*caeoma-ephemeral"
+		systemd-sysext status | grep "^/usr .*$IMAGE_ID-ephemeral"
 	'
 	test_expect_success '/opt is not managed by sysext' '
 		systemd-sysext status | grep "^/opt *- "
@@ -39,8 +39,8 @@ if test_stage 2; then
 	test_expect_success '/opt kept its write' '
 		test "$(cat /opt/persist-test)" = persist
 	'
-	test_expect_success 'caeoma-update still stages a version' '
-		caeoma-update --noconfirm -Syu tree
+	test_expect_success 'update still stages a version' '
+		"$IMAGE_ID-update" --noconfirm -Syu tree
 	'
 	test_expect_success 'no failed units' '
 		test -z "$(systemctl --failed --no-legend)"

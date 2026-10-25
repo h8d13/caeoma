@@ -2,8 +2,8 @@
 # Stamp the tree as IMAGE_ID/IMAGE_VERSION and build its boot artifacts:
 # os-release, sd-boot in the factory ESP, the UKI at <output.efi> (outside
 # the image: placing it is the caller's job). Run inside the tree, by the
-# mkosi build and by caeoma-update. The initrd embeds os-release, which pins
-# the /usr version, so os-release comes first.
+# mkosi build and by the in-box update. The initrd embeds os-release, which
+# pins the /usr version, so os-release comes first.
 # Usage: IMAGE_ID=... IMAGE_VERSION=... postinst <output.efi>
 
 set -e
@@ -12,11 +12,11 @@ out="$1"
 : "${IMAGE_ID:?}" "${IMAGE_VERSION:?}"
 
 cat > /usr/lib/os-release <<- EOF
-	NAME="Caeoma"
-	PRETTY_NAME="Caeoma $IMAGE_VERSION"
-	ID=caeoma
+	NAME="${IMAGE_ID^}"
+	PRETTY_NAME="${IMAGE_ID^} $IMAGE_VERSION"
+	ID=$IMAGE_ID
 	ID_LIKE=arch
-	DEFAULT_HOSTNAME=caeoma
+	DEFAULT_HOSTNAME=$IMAGE_ID
 	IMAGE_ID=$IMAGE_ID
 	IMAGE_VERSION=$IMAGE_VERSION
 EOF
@@ -31,4 +31,4 @@ else
 	bootctl install --no-variables --random-seed=no
 fi
 
-/usr/lib/caeoma/build-uki "$out"
+"/usr/lib/$IMAGE_ID/build-uki" "$out"

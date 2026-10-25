@@ -1,5 +1,5 @@
 # systemd-sysext runs before systemd-tmpfiles-setup, so its anchor
-# extension (caeoma-sysext.conf) is created here, just ahead of it.
+# extension (the sysext tmpfiles entry) is created here, just ahead of it.
 
 [Unit]
 Description=Anchor extension for the ephemeral writable /usr
@@ -9,7 +9,7 @@ Before=systemd-sysext.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=systemd-tmpfiles --create caeoma-sysext.conf
+ExecStart=systemd-tmpfiles --create __NAME__-sysext.conf
 
 [Install]
 WantedBy=systemd-sysext.service

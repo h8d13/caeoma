@@ -1,8 +1,8 @@
 #!/bin/bash
-# Initrd pieces to mount the versioned erofs /usr (see caeoma-usr-generator).
+# Initrd pieces to mount the versioned erofs /usr (see the usr generator).
 
 build() {
-	add_binary /usr/lib/systemd/system-generators/caeoma-usr-generator
+	add_binary /usr/lib/systemd/system-generators/__NAME__-usr-generator
 
 	# Needed for /dev/gpt-auto-root to show up.
 	map add_udev_rule 90-image-dissect.rules 99-systemd.rules

@@ -1,5 +1,5 @@
 #!/bin/bash
-# caeoma-update over three boots: add tree (delta), remove it (delta,
+# The update over three boots: add tree (delta), remove it (delta,
 # whiteouts). Box-side pacman, /etc links and CA trust, delta size, COW,
 # package DB integrity, cache cleanup.
 
@@ -38,8 +38,8 @@ common() {
 if test_stage 1; then
 	common
 	test_expect_success 'tree is not installed' '! pacman -Q tree'
-	test_expect_success 'caeoma-update stages tree' '
-		caeoma-update --noconfirm -Syu tree &&
+	test_expect_success 'update stages tree' '
+		"$IMAGE_ID-update" --noconfirm -Syu tree &&
 		pacman --query --quiet | wc -l > "$TEST_STATE/packages"
 	'
 	test_expect_success 'package cache emptied after staging' '
@@ -62,8 +62,8 @@ if test_stage 2; then
 	test_expect_success 'delta adds under 2 MiB on disk' '
 		test "$(exclusive_bytes)" -lt 2097152
 	'
-	test_expect_success 'caeoma-update removes tree' '
-		caeoma-update --noconfirm -R tree
+	test_expect_success 'update removes tree' '
+		"$IMAGE_ID-update" --noconfirm -R tree
 	'
 	test_reboot
 fi

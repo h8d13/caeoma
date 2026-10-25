@@ -3,7 +3,7 @@
 # initrd mounts), cmdline and kernel version, and the os-release files
 # inside its initrd. Needs pefile, zstd and cpio: run it in the tools tree,
 #
-#   mkosi box -- utils/uki-inspect mkosi.output/caeoma_<ver>.efi [--files]
+#   mkosi box -- utils/uki-inspect mkosi.output/<id>_<ver>.efi [--files]
 #
 # --files also lists every file in the initrd.
 

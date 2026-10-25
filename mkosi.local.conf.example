@@ -1,6 +1,6 @@
 # Per-machine knobs. Copy to mkosi.local.conf (gitignored) and adjust.
 # mkosi layers it over mkosi.conf; list settings (Packages=, ...) append.
-# Then build: mkosi -B -f build. Installed boxes update with caeoma-update.
+# Then build: mkosi -B -f build. Installed boxes update with <ImageId>-update.
 #
 # Not set here: root password, locale, keymap, timezone, hostname. /etc is
 # per machine; systemd-firstboot asks on first boot.

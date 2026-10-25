@@ -1,12 +1,12 @@
 #!/bin/bash
-# caeoma-update: derive the next image from the running one and stage it.
+# <id>-update: derive the next image from the running one and stage it.
 #
-#   caeoma-update [--squash] [pacman args]
+#   <id>-update [--squash] [pacman args]
 #                                 default -Syu; e.g. -Syu foo bar
 #                                 --squash: full image instead of a delta
-#   caeoma-update glue [url]      fetch a repo tarball (.tar.gz); its
-#                                 scripts/ and mkosi.extra/ go into every
-#                                 following image. URL kept in /etc/caeoma.
+#   <id>-update glue [url]        fetch a repo tarball (.tar.gz); its
+#                                 scripts/ and tree/ go into every
+#                                 following image. URL kept in /etc/<id>.
 #
 # The running erofs (whole tree) is the lower layer of an overlay; pacman
 # runs in it like arch-chroot does (host /proc /sys /dev /run, so hooks see
@@ -23,14 +23,14 @@ set -eu
 
 . /usr/lib/os-release
 
-state=/var/lib/caeoma
-glue_url_file=/etc/caeoma/glue-url
+state="/var/lib/$IMAGE_ID"
+glue_url_file="/etc/$IMAGE_ID/glue-url"
 # Same mount as /system: FICLONE refuses to reflink across mounts.
-work=/system/.caeoma-update
+work="/system/.$IMAGE_ID-update"
 keep=3
 
 usage() {
-	sed -n '2,10s/^# \{0,1\}//p' "$0"
+	sed -n "2,10{s/^# \{0,1\}//;s/<id>/$IMAGE_ID/g;p}" "$0"
 }
 
 fetch_glue() {
@@ -47,15 +47,15 @@ fetch_glue() {
 		| tar --extract --gzip --strip-components=1 --directory "$tmp"
 	rm --recursive --force "$state/glue"
 	mkdir "$state/glue"
-	cp --archive "$tmp/scripts" "$tmp/mkosi.extra" "$state/glue/"
+	cp --archive "$tmp/scripts" "$tmp/tree" "$state/glue/"
 	rm --recursive --force "$tmp"
-	echo "Glue from $url in $state/glue; used by the next caeoma-update."
+	echo "Glue from $url in $state/glue; used by the next update."
 }
 
 # Unmounting in reverse mount order; safe to call at any point.
 cleanup() {
 	local m
-	for m in etc/caeoma "${carried[@]}" var/lib/pacman/sync \
+	for m in "etc/$IMAGE_ID" "${carried[@]}" var/lib/pacman/sync \
 		var/cache/pacman/pkg etc/resolv.conf etc/pacman.d/gnupg \
 		run dev sys proc; do
 		if mountpoint --quiet "$work/mnt/$m"; then
@@ -107,13 +107,13 @@ umount_pacman() {
 		"$work/mnt/etc/resolv.conf" "$work/mnt/etc/pacman.d/gnupg"
 }
 
-# carry rules (/usr/lib/caeoma/state): the tree's /usr/lib/sysimage/<x> on
+# carry rules (the state script): the tree's /usr/lib/sysimage/<x> on
 # /var/lib/<x>, as on the box, so pacman (or another) writes into the
 # image's own DB. Unmounted after finalize, which drops the mount points.
 carried=()
 mount_carried() {
 	local verb path rules
-	rules="$(/usr/lib/caeoma/state)"
+	rules="$(IMAGE_ID="$IMAGE_ID" "/usr/lib/$IMAGE_ID/state")"
 	while read -r verb path; do
 		[ "$verb" = carry ] || continue
 		[ -d "$work/mnt/usr/lib/sysimage/${path#/var/lib/}" ] || continue
@@ -132,32 +132,12 @@ umount_carried() {
 	carried=()
 }
 
-# The box's /etc/caeoma (local state.d rules) for finalize in the tree;
+# The box's /etc/<id> (local state.d rules) for finalize in the tree;
 # finalize keeps it out of factory as machine state.
 mount_local_config() {
-	[ -d /etc/caeoma ] || return 0
-	mkdir --parents "$work/mnt/etc/caeoma"
-	mount --bind -o ro /etc/caeoma "$work/mnt/etc/caeoma"
-}
-
-# Copy files of tree $1 into $2 that are new or differ: rewriting an
-# identical file is still a copy-up into the delta.
-copy_changed() {
-	local rel
-	(cd "$1" && find . -mindepth 1 ! -type d -printf '%P\n') \
-		| while IFS= read -r rel; do
-			if [ -L "$1/$rel" ] && [ -L "$2/$rel" ] \
-				&& [ "$(readlink "$1/$rel")" = "$(readlink "$2/$rel")" ]; then
-				continue
-			fi
-			if [ ! -L "$1/$rel" ] && [ ! -L "$2/$rel" ] \
-				&& cmp --quiet "$1/$rel" "$2/$rel"; then
-				continue
-			fi
-			mkdir --parents "$(dirname "$2/$rel")"
-			rm --force "$2/$rel"
-			cp --archive --no-target-directory "$1/$rel" "$2/$rel"
-		done
+	[ -d "/etc/$IMAGE_ID" ] || return 0
+	mkdir --parents "$work/mnt/etc/$IMAGE_ID"
+	mount --bind -o ro "/etc/$IMAGE_ID" "$work/mnt/etc/$IMAGE_ID"
 }
 
 # overlayfs marks a replaced (or new) dir opaque; mkfs.erofs ignores that
@@ -246,8 +226,8 @@ mount -t overlay overlay \
 	"$work/mnt"
 
 if [ -d "$state/glue" ]; then
-	copy_changed "$state/glue/mkosi.extra" "$work/mnt"
-	copy_changed "$state/glue/scripts" "$work/mnt/usr/lib/caeoma"
+	IMAGE_ID="$IMAGE_ID" "$state/glue/scripts/install-glue" "$state/glue" \
+		"$work/mnt"
 fi
 
 mount_api
@@ -260,11 +240,11 @@ umount_pacman
 umount_carried
 
 chroot "$work/mnt" env IMAGE_ID="$IMAGE_ID" IMAGE_VERSION="$version" \
-	/usr/lib/caeoma/postinst /uki.efi
+	"/usr/lib/$IMAGE_ID/postinst" /uki.efi
 mount_local_config
-chroot "$work/mnt" /usr/lib/caeoma/finalize
-if mountpoint --quiet "$work/mnt/etc/caeoma"; then
-	umount "$work/mnt/etc/caeoma"
+chroot "$work/mnt" env IMAGE_ID="$IMAGE_ID" "/usr/lib/$IMAGE_ID/finalize"
+if mountpoint --quiet "$work/mnt/etc/$IMAGE_ID"; then
+	umount "$work/mnt/etc/$IMAGE_ID"
 fi
 mv "$work/mnt/uki.efi" "$next.efi"
 umount_api
