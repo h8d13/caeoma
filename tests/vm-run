@@ -1,21 +1,21 @@
 #!/bin/bash
-# Run one test of t/ inside the last build, in a throwaway VM, and print
+# Run one test of tests/ inside the last build, in a throwaway VM, and print
 # its TAP output. For prove:
 #
-#	prove --exec t/vm-run t/t[0-9]*.sh
-#	t/vm-run t/t1000-update-delta.sh        # one test, full log kept
+#	prove --exec tests/vm-run tests/t[0-9]*.sh
+#	tests/vm-run tests/t1000-update-delta.sh  # one test, full log kept
 #
 # The test runs as root from a unit injected as a credential
-# (systemd.extra-unit.*), with t/ mounted at /root/t. The whole console
+# (systemd.extra-unit.*), with tests/ mounted at /root/tests. The whole console
 # log goes to /tmp/caeoma-<test>-<time>.log.
 
 set -eu
 
 cd "$(dirname "$0")/.."
 
-name="$(basename "${1:?usage: t/vm-run t/tNNNN-name.sh}" .sh)"
-if [ ! -x "t/$name.sh" ]; then
-	echo "Bail out! no executable t/$name.sh"
+name="$(basename "${1:?usage: tests/vm-run tests/tNNNN-name.sh}" .sh)"
+if [ ! -x "tests/$name.sh" ]; then
+	echo "Bail out! no executable tests/$name.sh"
 	exit 1
 fi
 log="/tmp/caeoma-$name-$(date +%Y%m%d-%H%M%S).log"
@@ -38,14 +38,14 @@ cat > "$creds/systemd.extra-unit.caeoma-test.service" <<- EOF
 	StandardOutput=journal+console
 	StandardError=journal+console
 	Environment=TEST_STATE=/var/lib/caeoma-test/$name
-	ExecStart=/root/t/$name.sh
+	ExecStart=/root/tests/$name.sh
 EOF
 
 timeout 3600 mkosi \
 	--machine=caeoma-test \
 	--credential="$creds/systemd.extra-unit.caeoma-test.service" \
 	--kernel-command-line-extra="systemd.wants=caeoma-test.service" \
-	--runtime-tree="$PWD/t:/root/t" \
+	--runtime-tree="$PWD/tests:/root/tests" \
 	--ram=4G --cpus=4 \
 	--console=read-only \
 	--ephemeral=yes \

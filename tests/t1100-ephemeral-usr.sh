@@ -3,7 +3,7 @@
 # works live and is gone after reboot; /opt persists; caeoma-update still
 # stages a permanent version.
 
-. /root/t/test-lib.sh
+. /root/tests/test-lib.sh
 
 if test_stage 1; then
 	test_expect_success '/usr is merged with the ephemeral anchor' '

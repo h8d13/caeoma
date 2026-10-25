@@ -1,5 +1,5 @@
-# git-style test library, sourced by t/tNNNN-*.sh inside a Caeoma VM
-# (t/vm-run). Prints TAP on stdout; the plan comes last ("1..N"), as TAP
+# git-style test library, sourced by tests/tNNNN-*.sh inside a Caeoma VM
+# (tests/vm-run). Prints TAP on stdout; the plan comes last ("1..N"), as TAP
 # allows, since a test may span reboots:
 #
 #	if test_stage 1; then
@@ -14,7 +14,7 @@
 # Counters, the stage and anything a test keeps for later stages live in
 # $TEST_STATE (persistent /var; the VM disk itself is thrown away per run).
 
-: "${TEST_STATE:?run through t/vm-run}"
+: "${TEST_STATE:?run through tests/vm-run}"
 mkdir -p "$TEST_STATE"
 
 # state_get <name> <default>: a counter from $TEST_STATE, or the default

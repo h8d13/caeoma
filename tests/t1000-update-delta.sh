@@ -3,7 +3,7 @@
 # whiteouts). Box-side pacman, /etc links and CA trust, delta size, COW,
 # package DB integrity, cache cleanup.
 
-. /root/t/test-lib.sh
+. /root/tests/test-lib.sh
 . /usr/lib/os-release
 
 image="/system/${IMAGE_ID}_${IMAGE_VERSION}.erofs"

@@ -5,7 +5,7 @@
 # dirs expanded to whiteouts first (mkfs.erofs ignores the xattr). Re-run
 # after erofs-utils upgrades.
 
-. /root/t/test-lib.sh
+. /root/tests/test-lib.sh
 
 w=/var/tmp/erofs-incremental
 rm -rf "$w"
