@@ -1,0 +1,16 @@
+# Per-machine pacman keyring (the build's keyring is not shipped).
+# Same approach as archiso's pacman-init.service.
+
+[Unit]
+Description=Initialize pacman keyring
+ConditionDirectoryNotEmpty=!/etc/pacman.d/gnupg
+Before=archlinux-keyring-wkd-sync.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=pacman-key --init
+ExecStart=pacman-key --populate
+
+[Install]
+WantedBy=multi-user.target

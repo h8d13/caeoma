@@ -1,0 +1,195 @@
+#!/bin/bash
+# Freeze the tree: vendor config moves under /usr; /etc starts empty on the
+# installed system and only holds tmpfiles-made links/copies + local changes.
+# Run inside the tree, by the mkosi build and by caeoma-update (on a tree
+# that was finalized before), so every step must be idempotent, and touch
+# only what changed: in caeoma-update any write, even of identical bytes,
+# is copied up into the overlay and lands in the image delta.
+
+set -e
+
+# Replace $2 with $1 only if their content differs; $1 is consumed.
+replace_if_changed() {
+	if cmp --quiet "$1" "$2"; then
+		rm "$1"
+	else
+		mv "$1" "$2"
+	fi
+}
+
+# pacman's DB ships with /usr so it always describes the image.
+if [ -d /var/lib/pacman ]; then
+	mv --no-target-directory /var/lib/pacman /usr/lib/pacman
+fi
+# Repo indexes are a download cache: kept out of the image (ParticleOS ships
+# only local/ too), in /var so pacman -Sy still works on the box.
+if [ ! -L /usr/lib/pacman/sync ]; then
+	rm --recursive --force /usr/lib/pacman/sync
+	ln --symbolic /var/lib/pacman/sync /usr/lib/pacman/sync
+fi
+if ! grep --quiet '^DBPath = /usr/lib/pacman/$' /etc/pacman.conf; then
+	sed --in-place 's|^#\?DBPath .*|DBPath = /usr/lib/pacman/|' \
+		/etc/pacman.conf
+	grep --quiet '^DBPath = /usr/lib/pacman/$' /etc/pacman.conf
+fi
+# The build's keyring holds a private lsign key: never ship it.
+rm --recursive --force /etc/pacman.d/gnupg
+
+# PAM falls back to /usr/lib/pam.d per service.
+if [ -d /etc/pam.d ]; then
+	find /etc/pam.d -mindepth 1 -exec mv {} /usr/lib/pam.d \;
+	rmdir /etc/pam.d
+fi
+
+# Apply presets, then bake the enablement into the vendor dir so a new
+# image can change it. Local changes: systemctl mask / drop-ins in /etc.
+# The baked "disable *" preset is masked from /etc while presets apply.
+for dir in system-preset user-preset; do
+	mkdir --parents "/etc/systemd/$dir"
+	ln --symbolic --force /dev/null "/etc/systemd/$dir/00-caeoma-baked.preset"
+done
+systemctl preset-all
+systemctl preset-all --global
+for scope in system user; do
+	[ -d "/etc/systemd/$scope" ] || continue
+	cp --archive --update=none "/etc/systemd/$scope/." \
+		"/usr/lib/systemd/$scope/"
+	rm --recursive --force "/etc/systemd/$scope"
+done
+for dir in system-preset user-preset; do
+	rm --recursive --force "/etc/systemd/$dir"
+	# First boot (no machine-id) would re-apply presets into /etc otherwise.
+	printf '%s\n' \
+		'# Enablement is baked into /usr/lib/systemd at build time.' \
+		'disable *' > "/usr/lib/systemd/$dir/00-caeoma-baked.preset.new"
+	replace_if_changed "/usr/lib/systemd/$dir/00-caeoma-baked.preset.new" \
+		"/usr/lib/systemd/$dir/00-caeoma-baked.preset"
+done
+
+# Factory /etc mirrors /etc minus machine state (made at boot by sysusers,
+# firstboot, ldconfig, resolved) and resolv.conf (a bind mount in builds).
+# Synced rather than rebuilt: unchanged entries are never rewritten.
+factory=/usr/share/factory/etc
+
+is_machine_state() {
+	case "$1" in
+	.pwd.lock|passwd|passwd-|shadow|shadow-|group|group-|gshadow|gshadow-) ;;
+	machine-id|hostname|localtime|locale.conf|vconsole.conf|crypttab) ;;
+	resolv.conf|ld.so.cache|pam.d|pam.d/*|pacman.d/gnupg|pacman.d/gnupg/*) ;;
+	*) return 1 ;;
+	esac
+}
+
+mkdir --parents "$factory"
+# Gone from /etc, or machine state: drop (deepest first).
+(cd "$factory" && find . -mindepth 1 -depth -printf '%P\n') \
+	| while IFS= read -r rel; do
+		if is_machine_state "$rel" \
+			|| { [ ! -e "/etc/$rel" ] && [ ! -L "/etc/$rel" ]; }; then
+			rm --recursive --force "${factory:?}/$rel"
+		fi
+	done
+# New or changed: copy, keeping type, mode, owner and xattrs.
+(cd /etc && find . -mindepth 1 -printf '%P\n') | while IFS= read -r rel; do
+	is_machine_state "$rel" && continue
+	src="/etc/$rel"
+	dst="$factory/$rel"
+	if [ -d "$src" ] && [ ! -L "$src" ]; then
+		if [ ! -d "$dst" ] || [ -L "$dst" ]; then
+			rm --recursive --force "$dst"
+			mkdir "$dst"
+		fi
+		# Even a no-op chmod is a metadata write, hence a copy-up.
+		if [ "$(stat --format=%a:%u:%g "$src")" != \
+			"$(stat --format=%a:%u:%g "$dst")" ]; then
+			chmod --reference="$src" "$dst"
+			chown --reference="$src" "$dst"
+		fi
+		continue
+	fi
+	if [ -L "$src" ] && [ -L "$dst" ] \
+		&& [ "$(readlink "$src")" = "$(readlink "$dst")" ]; then
+		continue
+	fi
+	if [ -f "$src" ] && [ ! -L "$src" ] && [ -f "$dst" ] && [ ! -L "$dst" ] \
+		&& cmp --quiet "$src" "$dst" \
+		&& [ "$(stat --format=%a:%u:%g "$src")" = \
+			"$(stat --format=%a:%u:%g "$dst")" ]; then
+		continue
+	fi
+	rm --recursive --force "$dst"
+	cp --archive --no-target-directory "$src" "$dst"
+done
+
+# tmpfiles lines for factory content no package already declares.
+# Trees of pure vendor/generated content get one directory link each, as
+# ParticleOS does (L /etc/ssl, L /etc/security, ...); a local file there
+# means replacing the link with a real directory. Not done when a package
+# declares a path inside: that line would write through the link into the
+# read-only /usr. Everything else: L per file (override = replace the
+# link), C for files tools rewrite as state.
+etc_conf=/usr/lib/tmpfiles.d/caeoma-etc.conf
+declared="$(mktemp)"
+# Our previous output must not count as declared.
+awk 'FILENAME !~ /caeoma-etc\.conf$/ && $1 !~ /^#/ && NF >= 2 { print $2 }' \
+	/usr/lib/tmpfiles.d/*.conf | sort --unique > "$declared"
+
+linked=()
+for dir in ssl ca-certificates security xdg; do
+	[ -d "$factory/$dir" ] || continue
+	if grep --quiet -e "^/etc/$dir\$" -e "^/etc/$dir/" "$declared"; then
+		continue
+	fi
+	linked+=("$dir")
+done
+
+is_linked() {
+	local dir
+	for dir in "${linked[@]}"; do
+		case "$1" in "/etc/$dir/"*) return 0 ;; esac
+	done
+	return 1
+}
+
+{
+	echo "# Generated by /usr/lib/caeoma/finalize from $factory."
+	for dir in "${linked[@]}"; do
+		echo "L /etc/$dir - - - - $factory/$dir"
+	done
+	find "$factory" -mindepth 1 \( -type f -o -type l \) -printf '/etc/%P\n' \
+		| sort | while IFS= read -r path; do
+			if is_linked "$path" \
+				|| grep --quiet --fixed-strings --line-regexp "$path" \
+					"$declared"; then
+				continue
+			fi
+			case "$path" in
+			/etc/subuid|/etc/subgid)
+				echo "C $path - - - -" ;;
+			*)
+				echo "L $path - - - - /usr/share/factory$path" ;;
+			esac
+		done
+} > "$etc_conf.new"
+rm "$declared"
+replace_if_changed "$etc_conf.new" "$etc_conf"
+echo "$(grep --count "^[LC] " "$etc_conf") /etc entries in $etc_conf" \
+	"(directories linked: ${linked[*]:-none})"
+
+# No UKI inside the image: each would be appended (~70M) to every delta.
+# The mkosi build adds one to the factory ESP only to seed a fresh disk.
+rm --force /usr/share/factory/boot/EFI/Linux/*.efi
+
+# /boot is the ESP mountpoint; kernel and initrd only live in the UKI.
+mkdir --parents /boot
+find /boot -mindepth 1 -delete
+
+# The image's /var is never mounted (/var comes from @system): leave it
+# empty, as ParticleOS drops it by shipping /usr only. Anything mounted
+# below /var belongs to the builder, not the image: refuse, do not delete.
+if findmnt --list --noheadings --output TARGET | grep --quiet '^/var/'; then
+	echo "Mounted below /var, not emptying it:" >&2
+	findmnt --list --output TARGET,SOURCE,FSTYPE | grep '/var/' >&2
+	exit 1
+fi
+find /var -mindepth 1 -maxdepth 1 -exec rm --recursive --force {} +

@@ -1,0 +1,53 @@
+#!/bin/bash
+# Assemble the installed disk from mkosi's split partitions:
+#   ESP   block copy of the factory ESP (sd-boot + UKI)
+#   root  btrfs: <id>_<ver>.erofs (the /usr image) + @system (/, rw)
+# It replaces mkosi's own .raw, so `mkosi vm` boots the real layout.
+
+set -ex
+
+name="${IMAGE_ID}_${IMAGE_VERSION}"
+stage="$OUTPUTDIR/$name.stage"
+
+ls -la "$OUTPUTDIR"
+
+rm --recursive --force "$stage"
+mkdir --parents "$stage/root/@system"
+
+mv "$OUTPUTDIR/$name.esp.raw" "$stage/esp.raw"
+mv "$OUTPUTDIR/$name.root-$ARCHITECTURE.raw" "$OUTPUTDIR/$name.erofs"
+cp --reflink=auto "$OUTPUTDIR/$name.erofs" "$stage/root/$name.erofs"
+
+# Mountpoints and merged-usr links; /usr itself only arrives at boot.
+# /etc stays empty: tmpfiles fills it from /usr/share/factory/etc.
+cd "$stage/root/@system"
+mkdir boot dev etc home mnt opt proc run srv sys usr var
+mkdir --mode 0700 root
+mkdir --mode 1777 tmp
+ln --symbolic usr/bin bin
+ln --symbolic usr/bin sbin
+ln --symbolic usr/lib lib
+ln --symbolic usr/lib lib64
+
+# Relative: --root re-roots an absolute --definitions path into the stage.
+cd "$SRCDIR"
+systemd-repart \
+	--empty=create \
+	--size=auto \
+	--dry-run=no \
+	--offline=yes \
+	--root="$stage" \
+	--definitions=install.repart \
+	"$stage/disk.raw"
+
+# Missing definitions still yield an (empty) table; fail loudly instead.
+sfdisk --dump "$stage/disk.raw"
+parts="$(sfdisk --json "$stage/disk.raw" \
+	| jq '.partitiontable.partitions | length')"
+if [ "$parts" -ne 2 ]; then
+	echo "Expected 2 partitions in assembled disk, got $parts" >&2
+	exit 1
+fi
+
+mv "$stage/disk.raw" "$OUTPUTDIR/$name.raw"
+rm --recursive --force "$stage"

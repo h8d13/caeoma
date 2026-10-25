@@ -1,0 +1,10 @@
+#!/bin/sh
+# Shared glue from scripts/ (installed as /usr/lib/caeoma), then this
+# build's UKI into the factory ESP that mkosi.repart turns into esp.raw.
+# +3: boot-counting tries until blessed.
+
+set -e
+
+/usr/lib/caeoma/finalize
+cp "$OUTPUTDIR/${IMAGE_ID}_${IMAGE_VERSION}.efi" \
+	"/usr/share/factory/boot/EFI/Linux/${IMAGE_ID}_${IMAGE_VERSION}+3.efi"

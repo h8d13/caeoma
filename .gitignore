@@ -1,0 +1,13 @@
+/mkosi.output/
+/mkosi.cache/
+/mkosi.tools/
+/mkosi.tools.manifest
+/mkosi.version
+/mkosi.local.conf
+/mkosi.local/
+
+**/**.img
+**/**.iso
+**/**.efi
+**/**.erofs
+**/**.raw

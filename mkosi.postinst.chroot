@@ -1,0 +1,29 @@
+#!/bin/bash
+# Build-time knobs (plain mkosi settings, see mkosi.local.conf.example),
+# then the shared glue from scripts/ (installed as /usr/lib/caeoma).
+
+set -e
+
+if [ -z "$IMAGE_VERSION" ]; then
+	echo "No ImageVersion set; build with: mkosi -B build" >&2
+	exit 1
+fi
+
+mkosi_setting() {
+	python3 -c '
+import json, os, sys
+v = json.load(open(os.environ["MKOSI_CONFIG"])).get(sys.argv[1])
+print(" ".join(v) if isinstance(v, list) else (v or ""))' "$1"
+}
+
+# pacman-mirrorlist ships every server commented out. Mirror= (else Arch's
+# geo mirror); override locally by replacing the /etc symlink with a file.
+mirror="$(mkosi_setting Mirror)"
+mirror="${mirror:-https://geo.mirror.pkgbuild.com}"
+echo "Server = $mirror/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist
+
+# KernelCommandLine= is otherwise unused (Bootable=no). Kept in the image so
+# in-box UKI rebuilds (caeoma-update) reuse it.
+mkosi_setting KernelCommandLine > /usr/lib/caeoma/cmdline
+
+/usr/lib/caeoma/postinst "$OUTPUTDIR/${IMAGE_ID}_${IMAGE_VERSION}.efi"

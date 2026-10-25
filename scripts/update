@@ -1,0 +1,261 @@
+#!/bin/bash
+# caeoma-update: derive the next image from the running one and stage it.
+#
+#   caeoma-update [--squash] [pacman args]
+#                                 default -Syu; e.g. -Syu foo bar
+#                                 --squash: full image instead of a delta,
+#                                 and a freshly built initrd
+#   caeoma-update glue [url]      fetch a repo tarball (.tar.gz); its
+#                                 scripts/ and mkosi.extra/ go into every
+#                                 following image. URL kept in /etc/caeoma.
+#
+# The running erofs (whole tree) is the lower layer of an overlay; pacman
+# runs in it like arch-chroot does (host /proc /sys /dev /run, so hooks see
+# real hardware); finalize re-freezes the tree. The next erofs is a reflink
+# copy of the running one with only the upper dir appended (btrfs shares the
+# rest), or with --squash the whole merged view, dropping data that later
+# appends left dead. The image is renamed into /system, the UKI copied to
+# the ESP with boot counting; the newest $keep versions (plus the running
+# one) stay. Not systemd-sysupdate: it writes NOCOW files, which btrfs
+# cannot reflink with, so every image would cost its full size.
+
+set -eu
+
+. /usr/lib/os-release
+
+state=/var/lib/caeoma
+glue_url_file=/etc/caeoma/glue-url
+# Same mount as /system: FICLONE refuses to reflink across mounts.
+work=/system/.caeoma-update
+keep=3
+
+usage() {
+	sed -n '2,11s/^# \{0,1\}//p' "$0"
+}
+
+fetch_glue() {
+	local url="${1:-}"
+	if [ -z "$url" ]; then
+		url="$(cat "$glue_url_file")"
+	fi
+	mkdir --parents "$(dirname "$glue_url_file")" "$state"
+	echo "$url" > "$glue_url_file"
+
+	local tmp
+	tmp="$(mktemp --directory)"
+	curl --fail --location "$url" \
+		| tar --extract --gzip --strip-components=1 --directory "$tmp"
+	rm --recursive --force "$state/glue"
+	mkdir "$state/glue"
+	cp --archive "$tmp/scripts" "$tmp/mkosi.extra" "$state/glue/"
+	rm --recursive --force "$tmp"
+	echo "Glue from $url in $state/glue; used by the next caeoma-update."
+}
+
+# Unmounting in reverse mount order; safe to call at any point.
+cleanup() {
+	local m
+	for m in prev.efi var/lib/pacman/sync var/cache/pacman/pkg \
+		etc/resolv.conf etc/pacman.d/gnupg run dev sys proc; do
+		if mountpoint --quiet "$work/mnt/$m"; then
+			umount --recursive "$work/mnt/$m"
+		fi
+	done
+	if mountpoint --quiet "$work/mnt"; then
+		umount "$work/mnt"
+	fi
+	if mountpoint --quiet "$work/lower"; then
+		umount "$work/lower"
+	fi
+	rm --recursive --force "$work"
+}
+
+mount_api() {
+	local d
+	for d in proc sys dev run; do
+		mount --rbind "/$d" "$work/mnt/$d"
+		mount --make-rslave "$work/mnt/$d"
+	done
+}
+
+umount_api() {
+	local d
+	for d in run dev sys proc; do
+		umount --recursive "$work/mnt/$d"
+	done
+}
+
+# Host keyring, resolver, repo indexes and package cache, only while pacman
+# runs: finalize deletes /etc/pacman.d/gnupg and empties /var in the tree.
+# The indexes are shared with the box's own pacman -Sy.
+mount_pacman() {
+	local d
+	for d in var/lib/pacman/sync var/cache/pacman/pkg; do
+		mkdir --parents "/$d" "$work/mnt/$d"
+		mount --bind "/$d" "$work/mnt/$d"
+	done
+	mkdir --parents "$work/mnt/etc/pacman.d/gnupg"
+	mount --bind /etc/pacman.d/gnupg "$work/mnt/etc/pacman.d/gnupg"
+	# A touch of an existing file would still be copied up.
+	[ -e "$work/mnt/etc/resolv.conf" ] || touch "$work/mnt/etc/resolv.conf"
+	mount --bind "$(realpath /etc/resolv.conf)" "$work/mnt/etc/resolv.conf"
+}
+
+umount_pacman() {
+	umount "$work/mnt/var/lib/pacman/sync" "$work/mnt/var/cache/pacman/pkg" \
+		"$work/mnt/etc/resolv.conf" "$work/mnt/etc/pacman.d/gnupg"
+}
+
+# Copy files of tree $1 into $2 that are new or differ: rewriting an
+# identical file is still a copy-up into the delta.
+copy_changed() {
+	local rel
+	(cd "$1" && find . -mindepth 1 ! -type d -printf '%P\n') \
+		| while IFS= read -r rel; do
+			if [ -L "$1/$rel" ] && [ -L "$2/$rel" ] \
+				&& [ "$(readlink "$1/$rel")" = "$(readlink "$2/$rel")" ]; then
+				continue
+			fi
+			if [ ! -L "$1/$rel" ] && [ ! -L "$2/$rel" ] \
+				&& cmp --quiet "$1/$rel" "$2/$rel"; then
+				continue
+			fi
+			mkdir --parents "$(dirname "$2/$rel")"
+			rm --force "$2/$rel"
+			cp --archive --no-target-directory "$1/$rel" "$2/$rel"
+		done
+}
+
+# overlayfs marks a replaced (or new) dir opaque; mkfs.erofs ignores that
+# xattr, so whiteout each lower entry it hides: --ovlfs-strip=1 then deletes
+# them like any whiteout.
+expand_opaque() {
+	local dir rel entry
+	getfattr --absolute-names --recursive --physical --no-dereference --dump \
+		--match='^trusted\.overlay\.opaque$' "$work/upper" \
+		| sed -n 's/^# file: //p' \
+		| while IFS= read -r dir; do
+			rel="${dir#"$work/upper"}"
+			shopt -s dotglob nullglob
+			for entry in "$work/lower$rel"/*; do
+				entry="$dir/${entry##*/}"
+				if [ ! -e "$entry" ] && [ ! -L "$entry" ]; then
+					mknod "$entry" c 0 0
+				fi
+			done
+			setfattr --remove=trusted.overlay.opaque "$dir"
+		done
+}
+
+# Image by rename (same filesystem: no copy, extents stay shared), UKI via
+# a temporary name so the ESP never holds a partial entry. +3: boot-counting
+# tries, systemd-bless-boot drops the counter once the boot is good.
+install_next() {
+	local uki="/boot/EFI/Linux/${IMAGE_ID}_$version+3.efi"
+	chmod 0444 "$next.erofs"
+	mv "$next.erofs" "/system/${IMAGE_ID}_$version.erofs"
+	cp "$next.efi" "$uki.tmp"
+	mv "$uki.tmp" "$uki"
+}
+
+# Older than the newest $keep and not running: image and UKI (any counter).
+prune() {
+	local v
+	find /system -maxdepth 1 -name "${IMAGE_ID}_*.erofs" -printf '%f\n' \
+		| sed "s/^${IMAGE_ID}_\(.*\)\.erofs$/\1/" | sort | head --lines=-"$keep" \
+		| while IFS= read -r v; do
+			[ "$v" != "$IMAGE_VERSION" ] || continue
+			echo "Pruning $IMAGE_ID $v"
+			rm --force "/system/${IMAGE_ID}_$v.erofs" \
+				"/boot/EFI/Linux/${IMAGE_ID}_$v.efi" \
+				"/boot/EFI/Linux/${IMAGE_ID}_$v+"*.efi
+		done
+}
+
+squash=false
+case "${1:-}" in
+glue)
+	shift
+	fetch_glue "$@"
+	exit 0
+	;;
+-h|--help)
+	usage
+	exit 0
+	;;
+--squash)
+	squash=true
+	shift
+	;;
+esac
+
+if [ "$#" -eq 0 ]; then
+	set -- -Syu
+fi
+
+version="$(date --utc +%Y%m%d%H%M%S)"
+if [ "$version" -le "$IMAGE_VERSION" ]; then
+	echo "Next version $version is not newer than $IMAGE_VERSION" >&2
+	exit 1
+fi
+current="/system/${IMAGE_ID}_${IMAGE_VERSION}.erofs"
+next="$work/out/${IMAGE_ID}_$version"
+
+cleanup
+trap cleanup EXIT
+mkdir --parents "$work"/{lower,upper,work,mnt,out}
+
+# metacopy=off: a metadata-only copy-up has no data to append.
+mount -o ro "$current" "$work/lower"
+mount -t overlay overlay \
+	-o "lowerdir=$work/lower,upperdir=$work/upper,workdir=$work/work,metacopy=off" \
+	"$work/mnt"
+
+if [ -d "$state/glue" ]; then
+	copy_changed "$state/glue/mkosi.extra" "$work/mnt"
+	copy_changed "$state/glue/scripts" "$work/mnt/usr/lib/caeoma"
+fi
+
+mount_api
+mount_pacman
+pacman --sysroot "$work/mnt" "$@"
+umount_pacman
+
+# The running UKI, read-only, so build-uki can reuse its initrd when the
+# kernel and initrd inputs did not change. --squash rebuilds it.
+prev=""
+running_uki="$(find /boot/EFI/Linux -maxdepth 1 \
+	-name "${IMAGE_ID}_${IMAGE_VERSION}*.efi" -print -quit)"
+if [ "$squash" = false ] && [ -n "$running_uki" ]; then
+	touch "$work/mnt/prev.efi"
+	mount --bind -o ro "$running_uki" "$work/mnt/prev.efi"
+	prev=/prev.efi
+fi
+
+chroot "$work/mnt" env IMAGE_ID="$IMAGE_ID" IMAGE_VERSION="$version" \
+	/usr/lib/caeoma/postinst /uki.efi "$prev"
+if [ -n "$prev" ]; then
+	umount "$work/mnt/prev.efi"
+	rm "$work/mnt/prev.efi"
+fi
+chroot "$work/mnt" /usr/lib/caeoma/finalize
+mv "$work/mnt/uki.efi" "$next.efi"
+umount_api
+
+if [ "$squash" = true ]; then
+	mkfs.erofs --quiet -zzstd "$next.erofs" "$work/mnt"
+	umount "$work/mnt"
+else
+	umount "$work/mnt"
+	expand_opaque
+	cp --reflink=always "$current" "$next.erofs"
+	mkfs.erofs --quiet -zzstd --incremental=data --ovlfs-strip=1 \
+		"$next.erofs" "$work/upper"
+fi
+
+install_next
+prune
+# Staged packages are inside the image now; the cache only duplicates them.
+find /var/cache/pacman/pkg -mindepth 1 -delete
+
+echo "Staged $IMAGE_ID $version; reboot to switch."

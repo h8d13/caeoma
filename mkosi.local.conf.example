@@ -1,0 +1,29 @@
+# Per-machine knobs. Copy to mkosi.local.conf (gitignored) and adjust.
+# mkosi layers it over mkosi.conf; list settings (Packages=, ...) append.
+# Then build: mkosi -B -f build. Installed boxes update with caeoma-update.
+#
+# Not set here: root password, locale, keymap, timezone, hostname. /etc is
+# per machine; systemd-firstboot asks on first boot.
+
+[Distribution]
+# Build mirror, also written into the image's pacman mirrorlist.
+# Default: geo.mirror.pkgbuild.com.
+#Mirror=https://mirror.example.org/archlinux
+
+[Content]
+# Extra packages baked into the image. Real hardware wants linux-firmware.
+#Packages=
+#	linux-firmware
+#	openssh
+#	vim
+
+# Appended to the UKI kernel command line.
+#KernelCommandLine=
+#	console=ttyS0
+#	quiet
+
+[Runtime]
+# `mkosi vm` only.
+#RAM=4G
+#CPUs=4
+#RuntimeSize=32G

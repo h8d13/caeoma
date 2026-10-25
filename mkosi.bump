@@ -1,0 +1,3 @@
+#!/bin/sh
+# `mkosi -B build` versions each build by UTC time (sorts as a string).
+date --utc +%Y%m%d%H%M%S

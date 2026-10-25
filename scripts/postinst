@@ -1,0 +1,36 @@
+#!/bin/bash
+# Stamp the tree as IMAGE_ID/IMAGE_VERSION and build its boot artifacts:
+# os-release, sd-boot in the factory ESP, the UKI at <output.efi> (outside
+# the image: placing it is the caller's job). Run inside the tree, by the
+# mkosi build and by caeoma-update. The initrd embeds os-release, which pins
+# the /usr version, so os-release comes first.
+# Usage: IMAGE_ID=... IMAGE_VERSION=... postinst <output.efi> [previous.efi]
+# previous.efi: the running version's UKI, see build-uki.
+
+set -e
+
+out="$1"
+prev="${2:-}"
+: "${IMAGE_ID:?}" "${IMAGE_VERSION:?}"
+
+cat > /usr/lib/os-release <<- EOF
+	NAME="Caeoma"
+	PRETTY_NAME="Caeoma $IMAGE_VERSION"
+	ID=caeoma
+	ID_LIKE=arch
+	DEFAULT_HOSTNAME=caeoma
+	IMAGE_ID=$IMAGE_ID
+	IMAGE_VERSION=$IMAGE_VERSION
+EOF
+
+export SYSTEMD_ESP_PATH=/usr/share/factory/boot
+mkdir --parents --mode 0700 "$SYSTEMD_ESP_PATH/EFI/Linux"
+if bootctl is-installed; then
+	# Copies only a newer sd-boot: an identical one would land in the delta.
+	bootctl update --no-variables --graceful
+else
+	# No random seed: it is per machine, sd-boot creates it on first boot.
+	bootctl install --no-variables --random-seed=no
+fi
+
+/usr/lib/caeoma/build-uki "$out" "$prev"
