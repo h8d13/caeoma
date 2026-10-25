@@ -175,11 +175,30 @@ install_next() {
 	mv "$uki.tmp" "$uki"
 }
 
-# Older than the newest $keep and not running: image and UKI (any counter).
+versions() {
+	find /system -maxdepth 1 -name "${IMAGE_ID}_*.erofs" -printf '%f\n' \
+		| sed "s/^${IMAGE_ID}_\(.*\)\.erofs$/\1/" | sort
+}
+
+# True when version $1 has a UKI on the ESP (any boot counter).
+has_uki() {
+	[ -e "/boot/EFI/Linux/${IMAGE_ID}_$1.efi" ] \
+		|| compgen -G "/boot/EFI/Linux/${IMAGE_ID}_$1+*.efi" > /dev/null
+}
+
+# Leftovers of an interrupted install first (a UKI copy never renamed, an
+# image whose UKI never landed: unbootable, it would count towards $keep),
+# then older than the newest $keep and not running: image and UKI.
 prune() {
 	local v
-	find /system -maxdepth 1 -name "${IMAGE_ID}_*.erofs" -printf '%f\n' \
-		| sed "s/^${IMAGE_ID}_\(.*\)\.erofs$/\1/" | sort | head --lines=-"$keep" \
+	rm --force "/boot/EFI/Linux/${IMAGE_ID}_"*.efi.tmp
+	versions | while IFS= read -r v; do
+		if [ "$v" != "$IMAGE_VERSION" ] && ! has_uki "$v"; then
+			echo "Pruning $IMAGE_ID $v (no UKI)"
+			rm --force "/system/${IMAGE_ID}_$v.erofs"
+		fi
+	done
+	versions | head --lines=-"$keep" \
 		| while IFS= read -r v; do
 			[ "$v" != "$IMAGE_VERSION" ] || continue
 			echo "Pruning $IMAGE_ID $v"
@@ -189,10 +208,21 @@ prune() {
 		done
 }
 
+# One run at a time: a second one's cleanup would tear down the first's
+# work dir, a glue fetch would swap the glue a run is reading.
+lock() {
+	exec {lock_fd}> "/run/$IMAGE_ID-update.lock"
+	if ! flock --nonblock "$lock_fd"; then
+		echo "Another $IMAGE_ID-update is running" >&2
+		exit 1
+	fi
+}
+
 squash=false
 case "${1:-}" in
 glue)
 	shift
+	lock
 	fetch_glue "$@"
 	exit 0
 	;;
@@ -209,6 +239,7 @@ esac
 if [ "$#" -eq 0 ]; then
 	set -- -Syu
 fi
+lock
 
 version="$(date --utc +%Y%m%d%H%M%S)"
 if [ "$version" -le "$IMAGE_VERSION" ]; then
