@@ -1,3 +1,6 @@
 [submodule "docs/particleos"]
 	path = docs/particleos
 	url = https://github.com/systemd/particleos
+[submodule "docs/mkosi"]
+	path = docs/mkosi
+	url = https://github.com/systemd/mkosi
