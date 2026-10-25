@@ -187,31 +187,46 @@ has_uki() {
 		|| compgen -G "/boot/EFI/Linux/${IMAGE_ID}_$1+*.efi" > /dev/null
 }
 
-# Images are immutable (tmpfiles, install_next): lifted only to delete.
-remove_image() {
-	chattr -i "/system/${IMAGE_ID}_$1.erofs"
-	rm "/system/${IMAGE_ID}_$1.erofs"
+# True when version $1 failed every boot try: only +0-N UKIs, sd-boot
+# falls back past them.
+is_spent() {
+	[ ! -e "/boot/EFI/Linux/${IMAGE_ID}_$1.efi" ] \
+		&& compgen -G "/boot/EFI/Linux/${IMAGE_ID}_$1+0-*.efi" > /dev/null \
+		&& ! compgen -G "/boot/EFI/Linux/${IMAGE_ID}_$1+[1-9]*.efi" \
+			> /dev/null
 }
 
-# Leftovers of an interrupted install first (a UKI copy never renamed, an
-# image whose UKI never landed: unbootable, it would count towards $keep),
-# then older than the newest $keep and not running: image and UKI.
+# Image (immutable: tmpfiles, install_next; lifted only to delete) and UKI
+# of version $1.
+remove_version() {
+	chattr -i "/system/${IMAGE_ID}_$1.erofs"
+	rm "/system/${IMAGE_ID}_$1.erofs"
+	rm --force "/boot/EFI/Linux/${IMAGE_ID}_$1.efi" \
+		"/boot/EFI/Linux/${IMAGE_ID}_$1+"*.efi
+}
+
+# Unbootable versions first, they would count towards $keep: leftovers of
+# an interrupted install (a UKI copy never renamed, an image whose UKI
+# never landed) and versions that spent their boot tries. Then older than
+# the newest $keep. Never the running one.
 prune() {
 	local v
 	rm --force "/boot/EFI/Linux/${IMAGE_ID}_"*.efi.tmp
 	versions | while IFS= read -r v; do
-		if [ "$v" != "$IMAGE_VERSION" ] && ! has_uki "$v"; then
+		[ "$v" != "$IMAGE_VERSION" ] || continue
+		if ! has_uki "$v"; then
 			echo "Pruning $IMAGE_ID $v (no UKI)"
-			remove_image "$v"
+			remove_version "$v"
+		elif is_spent "$v"; then
+			echo "Pruning $IMAGE_ID $v (failed every boot try)"
+			remove_version "$v"
 		fi
 	done
 	versions | head --lines=-"$keep" \
 		| while IFS= read -r v; do
 			[ "$v" != "$IMAGE_VERSION" ] || continue
 			echo "Pruning $IMAGE_ID $v"
-			remove_image "$v"
-			rm --force "/boot/EFI/Linux/${IMAGE_ID}_$v.efi" \
-				"/boot/EFI/Linux/${IMAGE_ID}_$v+"*.efi
+			remove_version "$v"
 		done
 }
 
