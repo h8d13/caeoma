@@ -1,0 +1,11 @@
+# /home is the @home subvolume of the root partition (install.repart),
+# kept apart from @system: snapshots and reinstalls can leave it alone.
+
+[Unit]
+Before=local-fs.target
+
+[Mount]
+What=/dev/gpt-auto-root
+Where=/home
+Type=btrfs
+Options=nodev,subvol=/@home,compress=zstd

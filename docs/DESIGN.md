@@ -19,13 +19,15 @@ flowchart TD
 		ESP["ESP vfat<br/>sd-boot<br/>ID_VER+3.efi ..."]
 		subgraph BTRFS["root btrfs"]
 			TOP["top level = /system<br/>ID_VER.erofs ..."]
-			SYS["@system = / (rw)<br/>/etc /var /home"]
+			SYS["@system = / (rw)<br/>/etc /var"]
+			HOME["@home = /home (rw)"]
 		end
 	end
 
 	PO --> ESP
 	PO --> TOP
 	PO --> SYS
+	PO --> HOME
 
 	subgraph BOOT["Boot"]
 		SB["sd-boot picks UKI<br/>(boot counting +3)"]

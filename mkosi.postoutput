@@ -2,6 +2,7 @@
 # Assemble the installed disk from mkosi's split partitions:
 #   ESP   block copy of the factory ESP (sd-boot + UKI)
 #   root  btrfs: <id>_<ver>.erofs (the /usr image) + @system (/, rw)
+#         + @home (/home, empty)
 # It replaces mkosi's own .raw, so `mkosi vm` boots the real layout.
 
 set -ex
@@ -12,7 +13,7 @@ stage="$OUTPUTDIR/$name.stage"
 ls -la "$OUTPUTDIR"
 
 rm --recursive --force "$stage"
-mkdir --parents "$stage/root/@system"
+mkdir --parents "$stage/root/@system" "$stage/root/@home"
 
 mv "$OUTPUTDIR/$name.esp.raw" "$stage/esp.raw"
 mv "$OUTPUTDIR/$name.root-$ARCHITECTURE.raw" "$OUTPUTDIR/$name.erofs"
