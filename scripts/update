@@ -224,6 +224,10 @@ mkdir --parents "$work"/{lower,upper,work,mnt,out}
 
 # metacopy=off: a metadata-only copy-up has no data to append.
 mount -o ro "$current" "$work/lower"
+# mkfs.erofs takes the root inode from the upper (or merged) dir: keep the
+# image's, not mkdir's.
+chmod --reference="$work/lower" "$work/upper"
+chown --reference="$work/lower" "$work/upper"
 mount -t overlay overlay \
 	-o "lowerdir=$work/lower,upperdir=$work/upper,workdir=$work/work,metacopy=off" \
 	"$work/mnt"
