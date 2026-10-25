@@ -1,0 +1,28 @@
+#!/bin/bash
+# What changed between two /usr images: extracts both, then lists entries
+# (type, mode, path, link target) and files whose content differs. Needs
+# fsck.erofs: run it in the tools tree,
+#
+#   mkosi box -- utils/erofs-diff <old.erofs> <new.erofs> <outdir>
+#
+# Results in <outdir>/list.diff and <outdir>/content.diff. Modes are
+# extracted with the umask applied (unprivileged), same for both sides.
+
+set -eu
+
+old="$1"
+new="$2"
+out="$3"
+
+rm --recursive --force "$out"
+mkdir --parents "$out"
+fsck.erofs --extract="$out/old" --no-preserve "$old"
+fsck.erofs --extract="$out/new" --no-preserve "$new"
+for side in old new; do
+	(cd "$out/$side" && find . -printf '%y %m %p -> %l\n' | sort) \
+		> "$out/$side.list"
+done
+diff "$out/old.list" "$out/new.list" > "$out/list.diff" || true
+diff --recursive --no-dereference --brief "$out/old" "$out/new" \
+	> "$out/content.diff" || true
+wc --lines "$out/list.diff" "$out/content.diff"
