@@ -2,8 +2,11 @@
 # What caeoma-update relies on from mkfs.erofs --incremental: an overlay
 # upper appended to a reflinked copy of the lower image equals the merged
 # view. metacopy=off, --ovlfs-strip=1 (whiteouts become deletions), opaque
-# dirs expanded to whiteouts first (mkfs.erofs ignores the xattr). Re-run
-# after erofs-utils upgrades.
+# dirs expanded to whiteouts first (mkfs.erofs ignores the xattr). Images
+# are 48bit, as caeoma-update builds its full images: without it the root
+# inode nid is 16 bits and a changed root dir can make --incremental fail,
+# which caeoma-update answers with a full image (the fallback test).
+# Re-run after erofs-utils upgrades.
 
 . /root/tests/test-lib.sh
 
@@ -94,6 +97,14 @@ ops2() {
 	head -c 1048576 /dev/urandom > blob2.bin
 }
 
+# grow the root directory well past its inline size
+ops_grow_root() {
+	local i
+	for i in $(seq 1 300); do
+		echo "$i" > "root-entry-$i"
+	done
+}
+
 test_expect_success 'base image' '
 	mkdir -p base/deldir base/opaquedir base/sub &&
 	echo keep > base/keep.txt &&
@@ -106,7 +117,7 @@ test_expect_success 'base image' '
 	echo mode > base/chmod.txt &&
 	head -c 4194304 /dev/urandom > base/big.bin &&
 	head -c 4194304 /dev/urandom > base/sub/untouched.bin &&
-	mkfs.erofs --quiet -zzstd base.erofs base
+	mkfs.erofs --quiet -zzstd -E48bit base.erofs base
 '
 
 test_expect_success 'round 1 builds' 'round base.erofs ops1 v1.erofs'
@@ -124,5 +135,27 @@ test_expect_success 'appended rounds share the base extents' '
 		-ge "$(stat --format=%s base.erofs)"
 '
 test_info btrfs filesystem du base.erofs v1.erofs v2.erofs
+
+# caeoma-update's fallback when --incremental fails: the upper (whiteouts
+# expanded) as top lower layer over the old image, built as a full image.
+test_expect_success 'fallback full image equals the merged view' '
+	mkdir -p fallback.mnt fallback.check &&
+	mount -o ro v1.erofs v2.erofs.lower &&
+	mount -t overlay overlay \
+		-o "lowerdir=$w/v2.erofs.upper:$w/v2.erofs.lower" fallback.mnt &&
+	mkfs.erofs --quiet -zzstd -E48bit fallback.erofs fallback.mnt &&
+	umount fallback.mnt &&
+	umount v2.erofs.lower &&
+	mount -o ro fallback.erofs fallback.check &&
+	manifest fallback.check > fallback.got &&
+	umount fallback.check &&
+	diff v2.erofs.ref fallback.got
+'
+# Without 48bit the root inode nid is 16 bits: an appended root past nid
+# 65535 must fit the old root slot, which a changed root dir may not.
+test_expect_success 'with 48bit, a grown root dir builds incrementally' '
+	round base.erofs ops_grow_root grow48.erofs &&
+	diff grow48.erofs.ref grow48.erofs.got
+'
 
 test_done

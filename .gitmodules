@@ -1,0 +1,3 @@
+[submodule "docs/particleos"]
+	path = docs/particleos
+	url = https://github.com/systemd/particleos

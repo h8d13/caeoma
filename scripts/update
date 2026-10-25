@@ -12,11 +12,12 @@
 # runs in it like arch-chroot does (host /proc /sys /dev /run, so hooks see
 # real hardware); finalize re-freezes the tree. The next erofs is a reflink
 # copy of the running one with only the upper dir appended (btrfs shares the
-# rest), or with --squash the whole merged view, dropping data that later
-# appends left dead. The image is renamed into /system, the UKI copied to
-# the ESP with boot counting; the newest $keep versions (plus the running
-# one) stay. Not systemd-sysupdate: it writes NOCOW files, which btrfs
-# cannot reflink with, so every image would cost its full size.
+# rest), or with --squash (and as fallback when that fails) the whole
+# merged view, dropping data that later appends left dead. The image is
+# renamed into /system, the UKI copied to the ESP with boot counting; the
+# newest $keep versions (plus the running one) stay. Not systemd-sysupdate:
+# it writes NOCOW files, which btrfs cannot reflink with, so every image
+# would cost its full size.
 
 set -eu
 
@@ -233,15 +234,33 @@ chroot "$work/mnt" /usr/lib/caeoma/finalize
 mv "$work/mnt/uki.efi" "$next.efi"
 umount_api
 
+# Full image of the tree in $1. 48bit lets later incremental builds put
+# the root inode anywhere: without it its nid is 16 bits, so an appended
+# root past nid 65535 must fit the old root's slot or mkfs.erofs fails.
+build_full() {
+	mkfs.erofs --quiet -zzstd -E48bit "$next.erofs" "$1"
+}
+
 if [ "$squash" = true ]; then
-	mkfs.erofs --quiet -zzstd "$next.erofs" "$work/mnt"
+	build_full "$work/mnt"
 	umount "$work/mnt"
 else
 	umount "$work/mnt"
 	expand_opaque
 	cp --reflink=always "$current" "$next.erofs"
-	mkfs.erofs --quiet -zzstd --incremental=data --ovlfs-strip=1 \
-		"$next.erofs" "$work/upper"
+	if ! mkfs.erofs --quiet -zzstd --incremental=data --ovlfs-strip=1 \
+		"$next.erofs" "$work/upper"; then
+		# Typically a grown root dir in an image without 48bit: the
+		# full image (48bit) keeps the following deltas clear of it.
+		echo "Incremental build failed; building a full image instead" >&2
+		rm "$next.erofs"
+		# The same merged view, read-only: the upper (whiteouts as
+		# expanded above) as top lower layer.
+		mount -t overlay overlay \
+			-o "lowerdir=$work/upper:$work/lower" "$work/mnt"
+		build_full "$work/mnt"
+		umount "$work/mnt"
+	fi
 fi
 
 install_next
