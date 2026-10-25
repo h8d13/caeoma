@@ -106,8 +106,29 @@ mkdir --parents "$factory"
 			rm --recursive --force "${factory:?}/$rel"
 		fi
 	done
-# New or changed: copy, keeping type, mode, owner and xattrs.
-(cd /etc && find . -mindepth 1 -printf '%P\n') | while IFS= read -r rel; do
+# Tree $1 as file $2, one sorted line per entry: path, type,
+# mode:uid:gid, link target, content hash of regular files. Two finds and
+# a batched hash instead of a stat/readlink/cmp fork pair per entry. Plain
+# files, no <(): a failure stops here instead of syncing nothing.
+tree_manifest() {
+	local tab=$'\t'
+	(cd "$1" && find . -mindepth 1 -printf '%P\t%y\t%m:%U:%G\t%l\n') \
+		| LC_ALL=C sort -t "$tab" -k 1,1 > "$2.meta"
+	(cd "$1" && find . -mindepth 1 -type f -printf '%P\0' \
+		| xargs -0 --no-run-if-empty sha256sum) \
+		| sed 's/^\([0-9a-f]*\)  \(.*\)$/\2\t\1/' \
+		| LC_ALL=C sort -t "$tab" -k 1,1 > "$2.hash"
+	LC_ALL=C join -t "$tab" -a 1 "$2.meta" "$2.hash" > "$2"
+}
+
+# New or changed: copy, keeping type, mode, owner and xattrs. Only entries
+# whose manifest line differs are looked at (the checks below still decide).
+manifests="$(mktemp --directory)"
+tree_manifest /etc "$manifests/etc"
+tree_manifest "$factory" "$manifests/factory"
+LC_ALL=C comm -23 "$manifests/etc" "$manifests/factory" > "$manifests/changed"
+rm --recursive --force "$manifests/"*.meta "$manifests/"*.hash
+cut --fields=1 "$manifests/changed" | while IFS= read -r rel; do
 	is_machine_state "$rel" && continue
 	src="/etc/$rel"
 	dst="$factory/$rel"
@@ -137,6 +158,7 @@ mkdir --parents "$factory"
 	rm --recursive --force "$dst"
 	cp --archive --no-target-directory "$src" "$dst"
 done
+rm --recursive --force "$manifests"
 
 # tmpfiles lines for factory content no package already declares.
 # Trees of pure vendor/generated content get one directory link each, as
