@@ -1,13 +1,14 @@
 #!/bin/bash
-# Run one test of tests/ inside the last build, in a throwaway VM, and print
-# its TAP output. For prove:
+# Run one test of tests/ inside the test image (tests/run builds it, apart
+# from the stock one), in a throwaway VM, and print its TAP output:
 #
-#	prove --exec tests/vm-run tests/t[1-9]*.sh
-#	tests/vm-run tests/t1000-update-delta.sh  # one test, full log kept
+#	tests/run                                  # build, all tests
+#	tests/vm-run tests/t1000-update-delta.sh   # one test, full log kept
 #
 # The test runs as root from a unit injected as a credential
-# (systemd.extra-unit.*), with tests/ mounted at /root/tests. The whole console
-# log goes to /tmp/<ImageId>-<test>-<time>.log.
+# (systemd.extra-unit.*), with tests/ mounted at /root/tests. Everything
+# the VM needs is passed here, nothing from the stock [Runtime]. The whole
+# console log goes to /tmp/<ImageId>-<test>-<time>.log.
 
 set -eu
 
@@ -18,7 +19,14 @@ if [ ! -x "tests/$name.sh" ]; then
 	echo "Bail out! no executable tests/$name.sh"
 	exit 1
 fi
-id="$(mkosi --json summary | jq --raw-output '.Images[0].ImageId')"
+# shellcheck source=mkosi-args.sh
+. tests/mkosi-args.sh
+if [ ! -f "$test_out/version" ]; then
+	echo "Bail out! no test image, build it with tests/run"
+	exit 1
+fi
+id="$(mkosi "${test_mkosi[@]}" --json summary \
+	| jq --raw-output '.Images[0].ImageId')"
 log="/tmp/$id-$name-$(date +%Y%m%d-%H%M%S).log"
 
 creds="$(mktemp --directory)"
@@ -43,9 +51,15 @@ cat > "$creds/systemd.extra-unit.$id-test.service" <<- EOF
 	ExecStart=/root/tests/$name.sh
 EOF
 
-timeout 3600 mkosi \
+# First boot answers (systemd-firstboot would prompt on a read-only
+# console) and a root password, for this throwaway VM only.
+timeout 3600 mkosi "${test_mkosi[@]}" \
 	--machine="$id-test" \
 	--credential="$creds/systemd.extra-unit.$id-test.service" \
+	--credential=passwd.plaintext-password.root=root \
+	--credential=firstboot.locale=C.UTF-8 \
+	--credential=firstboot.keymap=us \
+	--credential=firstboot.timezone=UTC \
 	--kernel-command-line-extra="systemd.wants=$id-test.service" \
 	--runtime-tree="$PWD/tests:/root/tests" \
 	--ram=4G --cpus=4 \

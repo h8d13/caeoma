@@ -1,6 +1,9 @@
-Needs `perl` installed. Host tests (t0NNN), then VM tests in the last build:
+Needs `perl` (prove). Builds a test image apart from the stock build (own
+ImageId, mkosi.output/tests/, own version: tests/mkosi-args.sh), then runs
+host tests (t0NNN) and VM tests in it:
 
 ```
-prove tests/t0[0-9]*.sh
-prove --exec tests/vm-run tests/t[1-9]*.sh
+tests/run                                  # fresh test image, all tests
+tests/run --no-build                       # all tests, last test image
+tests/vm-run tests/t1000-update-delta.sh   # one VM test
 ```

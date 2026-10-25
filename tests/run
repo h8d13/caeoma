@@ -1,0 +1,26 @@
+#!/bin/bash
+# Build the test image and run every test against it, host tests first.
+# The stock build (mkosi.output/<id>_*, mkosi.version) is never touched:
+# see tests/mkosi-args.sh.
+#
+#	tests/run             fresh test image, then all tests
+#	tests/run --no-build  all tests against the last test image
+
+set -eu
+
+cd "$(dirname "$0")/.."
+
+if [ "${1:-}" != --no-build ]; then
+	# Only ever one test image: each is a few GB.
+	rm --recursive --force mkosi.output/tests
+	mkdir --parents mkosi.output/tests
+	date --utc +%Y%m%d%H%M%S > mkosi.output/tests/version
+fi
+# shellcheck source=mkosi-args.sh
+. tests/mkosi-args.sh
+if [ "${1:-}" != --no-build ]; then
+	mkosi "${test_mkosi[@]}" --force build
+fi
+
+prove tests/t0[0-9]*.sh
+prove --exec tests/vm-run tests/t[1-9]*.sh
