@@ -17,6 +17,8 @@ mkdir --parents "$stage/root/@system"
 mv "$OUTPUTDIR/$name.esp.raw" "$stage/esp.raw"
 mv "$OUTPUTDIR/$name.root-$ARCHITECTURE.raw" "$OUTPUTDIR/$name.erofs"
 cp --reflink=auto "$OUTPUTDIR/$name.erofs" "$stage/root/$name.erofs"
+# Read-only like every image the update installs.
+chmod 0444 "$stage/root/$name.erofs"
 
 # Mountpoints and merged-usr links; /usr itself only arrives at boot.
 # /etc stays empty: tmpfiles fills it from /usr/share/factory/etc.
