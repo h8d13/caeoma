@@ -1,19 +1,28 @@
 #!/bin/bash
-# Build the UKI: kernel + mkinitcpio initrd + cmdline + os-release.
-# Extra cmdline comes from the image (/usr/lib/<id>/cmdline, written at
-# build time from KernelCommandLine=) so in-box rebuilds keep it.
-# Usage: IMAGE_ID=... build-uki <output.efi>
+# Build the UKI: kernel + initrd + cmdline + os-release. Extra cmdline
+# comes from the image (/usr/lib/<id>/cmdline, written at build time from
+# KernelCommandLine=) so in-box rebuilds keep it.
+#
+# The initrd is two archives, the later one winning: mkinitcpio's, then
+# one holding only /usr/lib/os-release, which changes every version (it
+# names the erofs the initrd mounts). With $INITRD_CACHE (the in-box
+# update) mkinitcpio's is reused while its manifest matches: kernel,
+# config, versions of the packages owning what it holds or builds it,
+# hashes of the files no package owns.
+# Usage: IMAGE_ID=... [INITRD_CACHE=<dir>] build-uki <output.efi>
 
 set -e
 
 out="$1"
 : "${IMAGE_ID:?}"
+cache="${INITRD_CACHE:-}"
 cmdline="/usr/lib/$IMAGE_ID/cmdline"
 extra=""
 [ ! -f "$cmdline" ] || extra="$(cat "$cmdline")"
 modules=(/usr/lib/modules/*)
 kver="$(basename "${modules[-1]}")"
 work="$(mktemp --directory)"
+trap 'rm --recursive --force "$work"' EXIT
 
 cat > "$work/mkinitcpio.conf" <<- EOF
 	MODULES=(erofs loop btrfs)
@@ -22,14 +31,83 @@ cat > "$work/mkinitcpio.conf" <<- EOF
 	HOOKS=(base systemd modconf kms keyboard block filesystems $IMAGE_ID)
 EOF
 
-mkinitcpio --config "$work/mkinitcpio.conf" --generate "$work/initrd" \
-	--kernel "$kver"
+# Tree files behind initrd $1: what it took verbatim (same path and
+# bytes; not its busybox applet links or generated files, which
+# mkinitcpio's version and the config cover), but os-release, plus
+# mkinitcpio's hooks. Owners into $work/pkgs, the unowned into
+# $work/files.
+record_inputs() {
+	local rel
+	mkdir "$work/extract"
+	(cd "$work/extract" && lsinitcpio -x "$1")
+	{
+		(cd "$work/extract" && find . -type f -printf '%P\n') \
+			| while IFS= read -r rel; do
+				if [ -f "/$rel" ] && [ ! -L "/$rel" ] \
+					&& cmp --quiet "$work/extract/$rel" "/$rel"; then
+					echo "/$rel"
+				fi
+			done
+		find /usr/lib/initcpio -type f
+	} | grep --invert-match --line-regexp /usr/lib/os-release \
+		| sort --unique > "$work/inputs"
+	# Owners on stdout, every unowned path as an error on stderr.
+	xargs pacman --query --quiet --owns < "$work/inputs" \
+		2> "$work/owns.err" | sort --unique > "$work/pkgs"
+	if grep '^error: ' "$work/owns.err" \
+		| grep --invert-match '^error: No package owns '; then
+		echo "pacman --owns failed" >&2
+		exit 1
+	fi
+	sed --quiet 's/^error: No package owns //p' "$work/owns.err" \
+		> "$work/files"
+}
+
+# Errors are part of it: a package gone or a file missing is a change.
+manifest() {
+	echo "kernel $kver"
+	echo "config $(sha256sum < "$work/mkinitcpio.conf")"
+	xargs --no-run-if-empty pacman --query < "$work/pkgs" 2>&1 || true
+	xargs --no-run-if-empty sha256sum < "$work/files" 2>&1 || true
+}
+
+initrd=""
+if [ -n "$cache" ] && [ -f "$cache/manifest" ]; then
+	cp "$cache/pkgs" "$cache/files" "$work/"
+	manifest > "$work/manifest"
+	if cmp --quiet "$cache/manifest" "$work/manifest"; then
+		echo "Reusing cached initrd ($cache)"
+		initrd="$cache/initrd"
+	else
+		echo "initrd inputs changed:"
+		diff "$cache/manifest" "$work/manifest" || true
+	fi
+fi
+
+if [ -z "$initrd" ]; then
+	initrd="$work/initrd"
+	mkinitcpio --config "$work/mkinitcpio.conf" --generate "$initrd" \
+		--kernel "$kver"
+	if [ -n "$cache" ]; then
+		record_inputs "$initrd"
+		manifest > "$work/manifest"
+		# Manifest last: an interrupted store is never reused.
+		mkdir --parents "$cache"
+		rm --force "$cache/manifest"
+		cp "$initrd" "$work/pkgs" "$work/files" "$cache/"
+		cp "$work/manifest" "$cache/"
+	fi
+fi
+
+mkdir --parents "$work/osrel/usr/lib"
+cp /usr/lib/os-release "$work/osrel/usr/lib/"
+bsdtar --create --format newc --uid 0 --gid 0 --file "$work/osrel.cpio" \
+	--directory "$work/osrel" usr
 
 # No root=: gpt-auto finds the root partition, @system is mounted as /.
 ukify build \
 	--linux "/usr/lib/modules/$kver/vmlinuz" \
-	--initrd "$work/initrd" \
+	--initrd "$initrd" \
+	--initrd "$work/osrel.cpio" \
 	--cmdline "rw rootflags=subvol=@system,compress=zstd${extra:+ $extra}" \
 	--output "$out"
-
-rm --recursive --force "$work"

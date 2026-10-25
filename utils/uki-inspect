@@ -20,14 +20,65 @@ def section_data(section):
 	return section.get_data()[:section.Misc_VirtualSize]
 
 
-def initrd_cpio(initrd):
-	# mkinitcpio: an uncompressed early cpio, then the zstd main image.
-	start = initrd.find(b"\x28\xb5\x2f\xfd", initrd.find(b"TRAILER!!!"))
-	if start < 0:
-		sys.exit("no zstd archive found in .initrd")
-	return subprocess.run(["zstd", "-dc"],
-		input=initrd[start:].rstrip(b"\0"),
-		capture_output=True, check=True).stdout
+NEWC = b"070701"
+ZSTD = b"\x28\xb5\x2f\xfd"
+
+
+def newc_end(data, pos):
+	# End of the uncompressed newc archive at pos, or None if it is not one.
+	while data.startswith(NEWC, pos):
+		try:
+			filesize = int(data[pos + 54:pos + 62], 16)
+			namesize = int(data[pos + 94:pos + 102], 16)
+		except ValueError:
+			return None
+		name = data[pos + 110:pos + 110 + namesize - 1]
+		pos = (pos + 110 + namesize + 3) & ~3
+		pos = (pos + filesize + 3) & ~3
+		if name == b"TRAILER!!!":
+			return pos
+	return None
+
+
+def tail_start(data, pos):
+	# Where the uncompressed archives after a zstd one at pos begin: the
+	# first NEWC that parses as archives up to the (zero padded) end.
+	cand = data.find(NEWC, pos)
+	while cand >= 0:
+		end = cand
+		while end is not None and data.startswith(NEWC, end):
+			end = newc_end(data, end)
+			if end is not None:
+				while end < len(data) and data[end] == 0:
+					end += 1
+		if end == len(data):
+			return cand
+		cand = data.find(NEWC, cand + 1)
+	return len(data)
+
+
+def initrd_archives(initrd):
+	# The kernel unpacks them in order, later files win. mkinitcpio: an
+	# early cpio and the zstd main image; build-uki adds os-release after.
+	archives, pos = [], 0
+	while pos < len(initrd):
+		if initrd[pos] == 0:
+			pos += 1
+		elif initrd.startswith(NEWC, pos):
+			end = newc_end(initrd, pos)
+			if end is None:
+				sys.exit(f"bad cpio in .initrd at {pos}")
+			archives.append(initrd[pos:end])
+			pos = end
+		elif initrd.startswith(ZSTD, pos):
+			end = tail_start(initrd, pos)
+			archives.append(subprocess.run(["zstd", "-dc"],
+				input=initrd[pos:end].rstrip(b"\0"),
+				capture_output=True, check=True).stdout)
+			pos = end
+		else:
+			sys.exit(f"unknown archive in .initrd at {pos}")
+	return archives
 
 
 def main():
@@ -47,12 +98,13 @@ def main():
 			print(f"=== {name}")
 			print(section_data(sections[name]).decode().rstrip("\0\n"))
 
-	cpio = initrd_cpio(section_data(sections[".initrd"]))
+	archives = initrd_archives(section_data(sections[".initrd"]))
 	wanted = ["etc/initrd-release", "etc/os-release",
 		"usr/lib/os-release", "etc/hostname"]
 	with tempfile.TemporaryDirectory() as root:
-		subprocess.run(["cpio", "-idm", "--quiet", "-D", root, *wanted],
-			input=cpio, check=False)
+		for cpio in archives:
+			subprocess.run(["cpio", "-idmu", "--quiet", "-D", root,
+				*wanted], input=cpio, check=False)
 		for path in wanted:
 			full = os.path.join(root, path)
 			if os.path.islink(full):
@@ -64,9 +116,11 @@ def main():
 				print(f"=== initrd:{path} (absent)")
 
 	if list_files:
-		print("=== initrd files")
-		print(subprocess.run(["cpio", "-t", "--quiet"], input=cpio,
-			capture_output=True, check=True).stdout.decode().rstrip("\n"))
+		for i, cpio in enumerate(archives):
+			print(f"=== initrd files (archive {i + 1}/{len(archives)})")
+			print(subprocess.run(["cpio", "-t", "--quiet"], input=cpio,
+				capture_output=True, check=True).stdout.decode()
+				.rstrip("\n"))
 
 
 main()

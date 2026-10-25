@@ -57,7 +57,8 @@ fetch_glue() {
 # Unmounting in reverse mount order; safe to call at any point.
 cleanup() {
 	local m
-	for m in "etc/$IMAGE_ID" "${carried[@]}" var/lib/pacman/sync \
+	for m in "etc/$IMAGE_ID" "${state#/}/initrd" "${carried[@]}" \
+		var/lib/pacman/sync \
 		var/cache/pacman/pkg etc/resolv.conf etc/pacman.d/gnupg \
 		run dev sys proc; do
 		if mountpoint --quiet "$work/mnt/$m"; then
@@ -235,13 +236,19 @@ mount_api
 mount_pacman
 mount_carried
 pacman --sysroot "$work/mnt" "$@"
+
+# The box's initrd cache for build-uki, which asks pacman what its initrd
+# is made of: pacman's binds stay until then, as during the transaction.
+mkdir --parents "$state/initrd" "$work/mnt$state/initrd"
+mount --bind "$state/initrd" "$work/mnt$state/initrd"
+chroot "$work/mnt" env IMAGE_VERSION="$version" INITRD_CACHE="$state/initrd" \
+	"/usr/lib/$IMAGE_ID/postinst" /uki.efi
+umount "$work/mnt$state/initrd"
 umount_pacman
 # Off before finalize: a bound /var/lib/<x> shows content next to its
 # sysimage copy, which finalize refuses as a conflict.
 umount_carried
 
-chroot "$work/mnt" env IMAGE_VERSION="$version" \
-	"/usr/lib/$IMAGE_ID/postinst" /uki.efi
 mount_local_config
 chroot "$work/mnt" "/usr/lib/$IMAGE_ID/finalize"
 if mountpoint --quiet "$work/mnt/etc/$IMAGE_ID"; then

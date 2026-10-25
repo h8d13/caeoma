@@ -64,13 +64,22 @@ if test_stage 2; then
 		test "$(exclusive_bytes)" -lt 2097152
 	'
 	test_expect_success 'update removes tree' '
-		"$IMAGE_ID-update" --noconfirm -R tree
+		"$IMAGE_ID-update" --noconfirm -R tree > "$TEST_STATE/update2.log"
 	'
+	test_expect_success 'unchanged initrd inputs: cached initrd reused' '
+		grep "^Reusing cached initrd" "$TEST_STATE/update2.log" ||
+			{ cat "$TEST_STATE/update2.log"; false; }
+	'
+	echo "$IMAGE_VERSION" > "$TEST_STATE/v2"
 	test_reboot
 fi
 
 if test_stage 3; then
 	common
+	# The reused initrd holds the old os-release: the later archive wins.
+	test_expect_success 'booted the staged version (cached initrd)' '
+		test "$IMAGE_VERSION" != "$(cat "$TEST_STATE/v2")"
+	'
 	test_expect_success 'tree is gone (whiteouts applied)' '! pacman -Q tree'
 	test_expect_success 'delta adds under 2 MiB on disk' '
 		test "$(exclusive_bytes)" -lt 2097152
