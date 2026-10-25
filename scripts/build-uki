@@ -4,11 +4,11 @@
 # KernelCommandLine=) so in-box rebuilds keep it.
 #
 # The initrd is two archives, the later one winning: mkinitcpio's, then
-# one holding only /usr/lib/os-release, which changes every version (it
-# names the erofs the initrd mounts). With $INITRD_CACHE (the in-box
-# update) mkinitcpio's is reused while its manifest matches: kernel,
-# config, versions of the packages owning what it holds or builds it,
-# hashes of the files no package owns.
+# the image's own: /usr/lib/os-release, which changes every version (it
+# names the erofs the initrd mounts), and /etc/hostname. With
+# $INITRD_CACHE (the in-box update) mkinitcpio's is reused while its
+# manifest matches: kernel, config, versions of the packages owning what
+# it holds or builds it, hashes of the files no package owns.
 # Usage: IMAGE_ID=... [INITRD_CACHE=<dir>] build-uki <output.efi>
 
 set -e
@@ -99,15 +99,19 @@ if [ -z "$initrd" ]; then
 	fi
 fi
 
-mkdir --parents "$work/osrel/usr/lib"
-cp /usr/lib/os-release "$work/osrel/usr/lib/"
-bsdtar --create --format newc --uid 0 --gid 0 --file "$work/osrel.cpio" \
-	--directory "$work/osrel" usr
+mkdir --parents "$work/image/usr/lib" "$work/image/etc"
+cp /usr/lib/os-release "$work/image/usr/lib/"
+# The kernel boots named "archlinux" (CONFIG_DEFAULT_HOSTNAME) and systemd
+# keeps a name already set over os-release's DEFAULT_HOSTNAME. Set in the
+# initrd, the box keeps this one unless its own /etc/hostname says else.
+echo "$IMAGE_ID" > "$work/image/etc/hostname"
+bsdtar --create --format newc --uid 0 --gid 0 --file "$work/image.cpio" \
+	--directory "$work/image" usr etc
 
 # No root=: gpt-auto finds the root partition, @system is mounted as /.
 ukify build \
 	--linux "/usr/lib/modules/$kver/vmlinuz" \
 	--initrd "$initrd" \
-	--initrd "$work/osrel.cpio" \
+	--initrd "$work/image.cpio" \
 	--cmdline "rw rootflags=subvol=@system,compress=zstd${extra:+ $extra}" \
 	--output "$out"
