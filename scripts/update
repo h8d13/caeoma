@@ -220,6 +220,17 @@ next="$work/out/${IMAGE_ID}_$version"
 
 cleanup
 trap cleanup EXIT
+
+# Seconds per phase, for the closing line.
+timings=""
+lap="$EPOCHREALTIME"
+phase() {
+	local now="$EPOCHREALTIME"
+	timings+=" $1 $(awk -v a="$lap" -v b="$now" \
+		'BEGIN { printf "%.1fs", b - a }')"
+	lap="$now"
+}
+
 mkdir --parents "$work"/{lower,upper,work,mnt,out}
 
 # metacopy=off: a metadata-only copy-up has no data to append.
@@ -235,11 +246,13 @@ mount -t overlay overlay \
 if [ -d "$state/glue" ]; then
 	"$state/glue/scripts/install-glue" "$state/glue" "$work/mnt"
 fi
+phase setup
 
 mount_api
 mount_pacman
 mount_carried
 pacman --sysroot "$work/mnt" "$@"
+phase pacman
 
 # The box's initrd cache for build-uki, which asks pacman what its initrd
 # is made of: pacman's binds stay until then, as during the transaction.
@@ -252,6 +265,7 @@ umount_pacman
 # Off before finalize: a bound /var/lib/<x> shows content next to its
 # sysimage copy, which finalize refuses as a conflict.
 umount_carried
+phase postinst
 
 mount_local_config
 chroot "$work/mnt" "/usr/lib/$IMAGE_ID/finalize"
@@ -260,6 +274,7 @@ if mountpoint --quiet "$work/mnt/etc/$IMAGE_ID"; then
 fi
 mv "$work/mnt/uki.efi" "$next.efi"
 umount_api
+phase finalize
 
 # Full image of the tree in $1. 48bit lets later incremental builds put
 # the root inode anywhere: without it its nid is 16 bits, so an appended
@@ -289,10 +304,13 @@ else
 		umount "$work/mnt"
 	fi
 fi
+phase erofs
 
 install_next
 prune
 # Staged packages are inside the image now; the cache only duplicates them.
 find /var/cache/pacman/pkg -mindepth 1 -delete
+phase install
 
 echo "Staged $IMAGE_ID $version; reboot to switch."
+echo "Timings:$timings"

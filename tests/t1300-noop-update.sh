@@ -75,6 +75,7 @@ if test_stage 1; then
 	'
 	test_info echo "cold $(cat "$TEST_STATE/cold.seconds")s," \
 		"warm $(cat "$TEST_STATE/warm.seconds")s"
+	test_info grep '^Timings' "$TEST_STATE/cold.log" "$TEST_STATE/warm.log"
 	check_noop 'built image'
 	cp "$TEST_STATE/running.sha256" "$TEST_STATE/built.sha256"
 	test_reboot
@@ -89,6 +90,7 @@ if test_stage 2; then
 		timed_update steady
 	'
 	test_info echo "steady $(cat "$TEST_STATE/steady.seconds")s"
+	test_info grep '^Timings' "$TEST_STATE/steady.log"
 	check_noop 'in-box image'
 	test_expect_success 'no failed units' '
 		test -z "$(systemctl --failed --no-legend)"
