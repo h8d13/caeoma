@@ -62,6 +62,11 @@ check_noop() {
 	test_expect_success "$1: images are read-only files" '
 		! find /system -maxdepth 1 -name "*.erofs" -perm /222 | grep .
 	'
+	test_expect_success "$1: images are immutable, even for root" '
+		! lsattr /system/*.erofs | grep -v "^[^ ]*i" &&
+		! sh -c "echo x >> \"$image\"" &&
+		! rm --force "$image"
+	'
 }
 
 if test_stage 1; then

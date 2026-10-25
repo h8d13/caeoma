@@ -171,6 +171,7 @@ install_next() {
 	local uki="/boot/EFI/Linux/${IMAGE_ID}_$version+3.efi"
 	chmod 0444 "$next.erofs"
 	mv "$next.erofs" "/system/${IMAGE_ID}_$version.erofs"
+	chattr +i "/system/${IMAGE_ID}_$version.erofs"
 	cp "$next.efi" "$uki.tmp"
 	mv "$uki.tmp" "$uki"
 }
@@ -186,6 +187,12 @@ has_uki() {
 		|| compgen -G "/boot/EFI/Linux/${IMAGE_ID}_$1+*.efi" > /dev/null
 }
 
+# Images are immutable (tmpfiles, install_next): lifted only to delete.
+remove_image() {
+	chattr -i "/system/${IMAGE_ID}_$1.erofs"
+	rm "/system/${IMAGE_ID}_$1.erofs"
+}
+
 # Leftovers of an interrupted install first (a UKI copy never renamed, an
 # image whose UKI never landed: unbootable, it would count towards $keep),
 # then older than the newest $keep and not running: image and UKI.
@@ -195,15 +202,15 @@ prune() {
 	versions | while IFS= read -r v; do
 		if [ "$v" != "$IMAGE_VERSION" ] && ! has_uki "$v"; then
 			echo "Pruning $IMAGE_ID $v (no UKI)"
-			rm --force "/system/${IMAGE_ID}_$v.erofs"
+			remove_image "$v"
 		fi
 	done
 	versions | head --lines=-"$keep" \
 		| while IFS= read -r v; do
 			[ "$v" != "$IMAGE_VERSION" ] || continue
 			echo "Pruning $IMAGE_ID $v"
-			rm --force "/system/${IMAGE_ID}_$v.erofs" \
-				"/boot/EFI/Linux/${IMAGE_ID}_$v.efi" \
+			remove_image "$v"
+			rm --force "/boot/EFI/Linux/${IMAGE_ID}_$v.efi" \
 				"/boot/EFI/Linux/${IMAGE_ID}_$v+"*.efi
 		done
 }
