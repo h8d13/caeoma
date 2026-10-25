@@ -17,20 +17,15 @@ replace_if_changed() {
 	fi
 }
 
-# pacman's DB ships with /usr so it always describes the image.
-if [ -d /var/lib/pacman ]; then
-	mv --no-target-directory /var/lib/pacman /usr/lib/pacman
-fi
-# Repo indexes are a download cache: kept out of the image (ParticleOS ships
-# only local/ too), in /var so pacman -Sy still works on the box.
-if [ ! -L /usr/lib/pacman/sync ]; then
-	rm --recursive --force /usr/lib/pacman/sync
-	ln --symbolic /var/lib/pacman/sync /usr/lib/pacman/sync
-fi
-if ! grep --quiet '^DBPath = /usr/lib/pacman/$' /etc/pacman.conf; then
-	sed --in-place 's|^#\?DBPath .*|DBPath = /usr/lib/pacman/|' \
-		/etc/pacman.conf
-	grep --quiet '^DBPath = /usr/lib/pacman/$' /etc/pacman.conf
+# pacman: the installed-package DB ships with /usr so it always describes
+# the image (ParticleOS ships only local/ too). DBPath stays Arch's default
+# /var/lib/pacman: its lock and repo indexes must be writable on the box,
+# and tmpfiles links /var/lib/pacman/local back to /usr/lib/pacman/local.
+# Only a fresh build moves it; caeoma-update binds /usr/lib/pacman/local
+# over it in the tree, and its leftover mount point goes with /var below.
+if [ ! -e /usr/lib/pacman/local ]; then
+	mkdir --parents /usr/lib/pacman
+	mv --no-target-directory /var/lib/pacman/local /usr/lib/pacman/local
 fi
 # The build's keyring holds a private lsign key: never ship it.
 rm --recursive --force /etc/pacman.d/gnupg
@@ -185,11 +180,18 @@ mkdir --parents /boot
 find /boot -mindepth 1 -delete
 
 # The image's /var is never mounted (/var comes from @system): leave it
-# empty, as ParticleOS drops it by shipping /usr only. Anything mounted
-# below /var belongs to the builder, not the image: refuse, do not delete.
-if findmnt --list --noheadings --output TARGET | grep --quiet '^/var/'; then
-	echo "Mounted below /var, not emptying it:" >&2
-	findmnt --list --output TARGET,SOURCE,FSTYPE | grep '/var/' >&2
-	exit 1
-fi
-find /var -mindepth 1 -maxdepth 1 -exec rm --recursive --force {} +
+# empty, as ParticleOS drops it by shipping /usr only. A mount below /var
+# belongs to the builder (mkosi binds its scratch dir on /var/tmp): skip a
+# mount point itself, refuse to delete anything that contains one.
+for entry in /var/* /var/.[!.]*; do
+	[ -e "$entry" ] || [ -L "$entry" ] || continue
+	if mountpoint --quiet "$entry"; then
+		continue
+	fi
+	if findmnt --list --noheadings --output TARGET | grep --quiet "^$entry/"; then
+		echo "Mounted below $entry, not emptying /var:" >&2
+		findmnt --list --output TARGET,SOURCE | grep "^$entry/" >&2
+		exit 1
+	fi
+	rm --recursive --force "$entry"
+done

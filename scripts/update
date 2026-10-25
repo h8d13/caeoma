@@ -3,8 +3,7 @@
 #
 #   caeoma-update [--squash] [pacman args]
 #                                 default -Syu; e.g. -Syu foo bar
-#                                 --squash: full image instead of a delta,
-#                                 and a freshly built initrd
+#                                 --squash: full image instead of a delta
 #   caeoma-update glue [url]      fetch a repo tarball (.tar.gz); its
 #                                 scripts/ and mkosi.extra/ go into every
 #                                 following image. URL kept in /etc/caeoma.
@@ -30,7 +29,7 @@ work=/system/.caeoma-update
 keep=3
 
 usage() {
-	sed -n '2,11s/^# \{0,1\}//p' "$0"
+	sed -n '2,10s/^# \{0,1\}//p' "$0"
 }
 
 fetch_glue() {
@@ -55,7 +54,7 @@ fetch_glue() {
 # Unmounting in reverse mount order; safe to call at any point.
 cleanup() {
 	local m
-	for m in prev.efi var/lib/pacman/sync var/cache/pacman/pkg \
+	for m in var/lib/pacman/local var/lib/pacman/sync var/cache/pacman/pkg \
 		etc/resolv.conf etc/pacman.d/gnupg run dev sys proc; do
 		if mountpoint --quiet "$work/mnt/$m"; then
 			umount --recursive "$work/mnt/$m"
@@ -90,6 +89,12 @@ umount_api() {
 # The indexes are shared with the box's own pacman -Sy.
 mount_pacman() {
 	local d
+	# Installs land in the image's own package DB (finalize empties /var).
+	# A bind, not the box's symlink: libalpm replaces a symlinked local/
+	# with a fresh directory holding only the new entries.
+	mkdir --parents "$work/mnt/var/lib/pacman/local"
+	mount --bind "$work/mnt/usr/lib/pacman/local" \
+		"$work/mnt/var/lib/pacman/local"
 	for d in var/lib/pacman/sync var/cache/pacman/pkg; do
 		mkdir --parents "/$d" "$work/mnt/$d"
 		mount --bind "/$d" "$work/mnt/$d"
@@ -102,7 +107,8 @@ mount_pacman() {
 }
 
 umount_pacman() {
-	umount "$work/mnt/var/lib/pacman/sync" "$work/mnt/var/cache/pacman/pkg" \
+	umount "$work/mnt/var/lib/pacman/local" "$work/mnt/var/lib/pacman/sync" \
+		"$work/mnt/var/cache/pacman/pkg" \
 		"$work/mnt/etc/resolv.conf" "$work/mnt/etc/pacman.d/gnupg"
 }
 
@@ -221,23 +227,8 @@ mount_pacman
 pacman --sysroot "$work/mnt" "$@"
 umount_pacman
 
-# The running UKI, read-only, so build-uki can reuse its initrd when the
-# kernel and initrd inputs did not change. --squash rebuilds it.
-prev=""
-running_uki="$(find /boot/EFI/Linux -maxdepth 1 \
-	-name "${IMAGE_ID}_${IMAGE_VERSION}*.efi" -print -quit)"
-if [ "$squash" = false ] && [ -n "$running_uki" ]; then
-	touch "$work/mnt/prev.efi"
-	mount --bind -o ro "$running_uki" "$work/mnt/prev.efi"
-	prev=/prev.efi
-fi
-
 chroot "$work/mnt" env IMAGE_ID="$IMAGE_ID" IMAGE_VERSION="$version" \
-	/usr/lib/caeoma/postinst /uki.efi "$prev"
-if [ -n "$prev" ]; then
-	umount "$work/mnt/prev.efi"
-	rm "$work/mnt/prev.efi"
-fi
+	/usr/lib/caeoma/postinst /uki.efi
 chroot "$work/mnt" /usr/lib/caeoma/finalize
 mv "$work/mnt/uki.efi" "$next.efi"
 umount_api

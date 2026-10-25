@@ -1,0 +1,22 @@
+# pacman's installed-package DB is the running image's (/usr/lib/pacman/
+# local). A bind, not a symlink: libalpm replaces a symlinked local/ with a
+# directory of only the new entries. After the ephemeral sysext overlay is
+# on /usr, so a pacman -S on the box writes through it and is gone at
+# reboot with the rest of the install.
+
+[Unit]
+Description=pacman installed-package DB of the running image
+DefaultDependencies=no
+RequiresMountsFor=/var
+After=systemd-sysext.service
+Before=sysinit.target umount.target
+Conflicts=umount.target
+
+[Mount]
+What=/usr/lib/pacman/local
+Where=/var/lib/pacman/local
+Type=none
+Options=bind
+
+[Install]
+WantedBy=sysinit.target

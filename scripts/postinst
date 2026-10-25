@@ -4,13 +4,11 @@
 # the image: placing it is the caller's job). Run inside the tree, by the
 # mkosi build and by caeoma-update. The initrd embeds os-release, which pins
 # the /usr version, so os-release comes first.
-# Usage: IMAGE_ID=... IMAGE_VERSION=... postinst <output.efi> [previous.efi]
-# previous.efi: the running version's UKI, see build-uki.
+# Usage: IMAGE_ID=... IMAGE_VERSION=... postinst <output.efi>
 
 set -e
 
 out="$1"
-prev="${2:-}"
 : "${IMAGE_ID:?}" "${IMAGE_VERSION:?}"
 
 cat > /usr/lib/os-release <<- EOF
@@ -33,4 +31,4 @@ else
 	bootctl install --no-variables --random-seed=no
 fi
 
-/usr/lib/caeoma/build-uki "$out" "$prev"
+/usr/lib/caeoma/build-uki "$out"

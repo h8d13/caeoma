@@ -2,79 +2,31 @@
 # Build the UKI: kernel + mkinitcpio initrd + cmdline + os-release.
 # Extra cmdline comes from the image (/usr/lib/caeoma/cmdline, written at
 # build time from KernelCommandLine=) so in-box rebuilds keep it.
-#
-# Between versions the initrd usually differs only by its os-release, which
-# names the erofs to mount. So when the kernel and initrd inputs (the key
-# below) are unchanged and the previous UKI is given, its initrd is reused
-# with a small cpio carrying the new os-release appended (a later archive
-# overrides earlier files): mkinitcpio (~25s) runs only when the key changed.
-# Usage: build-uki <output.efi> [previous.efi]
+# Usage: build-uki <output.efi>
 
 set -e
 
 out="$1"
-prev="${2:-}"
 extra=""
 [ ! -f /usr/lib/caeoma/cmdline ] || extra="$(cat /usr/lib/caeoma/cmdline)"
 modules=(/usr/lib/modules/*)
 kver="$(basename "${modules[-1]}")"
 work="$(mktemp --directory)"
-key_file=/usr/lib/caeoma/initrd.key
 
-kernel_pkg="$(pacman --query --quiet --owns "/usr/lib/modules/$kver/vmlinuz")"
-{
-	echo "$kver"
-	pacman --query "$kernel_pkg" mkinitcpio mkinitcpio-busybox systemd
-	sha256sum /usr/lib/caeoma/build-uki \
-		/usr/lib/initcpio/install/caeoma \
-		/usr/lib/systemd/system-generators/caeoma-usr-generator
-} > "$work/key"
+cat > "$work/mkinitcpio.conf" <<- EOF
+	MODULES=(erofs loop btrfs)
+	BINARIES=()
+	FILES=()
+	HOOKS=(base systemd modconf kms keyboard block filesystems caeoma)
+EOF
 
-# Writes the .initrd section of UKI $1 to $2, without section padding.
-extract_initrd() {
-	python3 - "$1" "$2" <<- 'EOF'
-		import sys
-		import pefile
-		pe = pefile.PE(sys.argv[1], fast_load=True)
-		for s in pe.sections:
-		    if s.Name.rstrip(b"\0") == b".initrd":
-		        with open(sys.argv[2], "wb") as f:
-		            f.write(s.get_data()[:s.Misc_VirtualSize])
-		        break
-		else:
-		    sys.exit(f"{sys.argv[1]}: no .initrd section")
-	EOF
-}
-
-if [ -n "$prev" ] && [ -f "$prev" ] && [ -f "$key_file" ] \
-	&& cmp --quiet "$work/key" "$key_file"; then
-	echo "Initrd inputs unchanged: reusing the initrd of $prev"
-	extract_initrd "$prev" "$work/initrd"
-	mkdir --parents "$work/osrel/usr/lib"
-	cp /usr/lib/os-release "$work/osrel/usr/lib/"
-	bsdtar --create --format=newc --file="$work/osrel.cpio" \
-		--directory="$work/osrel" usr
-	initrds=(--initrd "$work/initrd" --initrd "$work/osrel.cpio")
-else
-	cat > "$work/mkinitcpio.conf" <<- EOF
-		MODULES=(erofs loop btrfs)
-		BINARIES=()
-		FILES=()
-		HOOKS=(base systemd modconf kms keyboard block filesystems caeoma)
-	EOF
-	mkinitcpio --config "$work/mkinitcpio.conf" --generate "$work/initrd" \
-		--kernel "$kver"
-	initrds=(--initrd "$work/initrd")
-	# Rewritten only on change: an identical write lands in the delta too.
-	if ! cmp --quiet "$work/key" "$key_file"; then
-		cp "$work/key" "$key_file"
-	fi
-fi
+mkinitcpio --config "$work/mkinitcpio.conf" --generate "$work/initrd" \
+	--kernel "$kver"
 
 # No root=: gpt-auto finds the root partition, @system is mounted as /.
 ukify build \
 	--linux "/usr/lib/modules/$kver/vmlinuz" \
-	"${initrds[@]}" \
+	--initrd "$work/initrd" \
 	--cmdline "rw rootflags=subvol=@system,compress=zstd${extra:+ $extra}" \
 	--output "$out"
 

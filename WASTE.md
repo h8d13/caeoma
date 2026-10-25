@@ -134,7 +134,7 @@ Implemented, not yet built or measured:
 | identical rewrites | finalize (`replace_if_changed`), postinst (`bootctl update`), update (`copy_changed` glue, no `touch`) | n/a (full images) |
 | image `/var` | finalize (empties, refuses if anything is mounted below) | yes in effect: it ships `/usr` only |
 | mkinitcpio hook | `mkosi.extra/etc/pacman.d/hooks/90-mkinitcpio-install.hook → /dev/null` | n/a |
-| initrd reuse | build-uki (key file, `.initrd` of the running UKI + os-release cpio), update (`--squash` rebuilds) | n/a |
+| initrd reuse | removed again: its pacman-based key broke updates; ~20 s per update is not worth it. If revisited: a manifest of the initrd's files and their hashes, no package manager | n/a |
 | pkg cache | update (emptied after a successful stage) | n/a |
 
 Not done: Arch's own `C` lines (`arch.conf`, `audit.conf`, `openssh.conf`,
