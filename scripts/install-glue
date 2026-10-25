@@ -1,0 +1,49 @@
+#!/bin/bash
+# Install the glue of repo checkout <src> into tree <root>: tree/ onto /,
+# scripts/ as /usr/lib/$IMAGE_ID, both rendered (see render). Run by the
+# mkosi build and by the in-box update (on the next image's overlay).
+# Writes only files that are new or differ (rewriting an identical file is
+# still a copy-up into the delta) and deletes what an earlier glue
+# installed and this one no longer has, from the list it keeps alongside.
+# Usage: IMAGE_ID=... install-glue <src> <root>
+
+set -eu
+
+src="$1"
+root="$2"
+: "${IMAGE_ID:?}"
+list="usr/lib/$IMAGE_ID/glue.list"
+
+work="$(mktemp --directory)"
+trap 'rm --recursive --force "$work"' EXIT
+stage="$work/root"
+
+"$src/scripts/render" "$src/tree" "$stage"
+"$src/scripts/render" "$src/scripts" "$stage/usr/lib/$IMAGE_ID"
+# Listed before it is added, so the list never names itself.
+(cd "$stage" && find . -mindepth 1 ! -type d -printf '%P\n') \
+	| sort > "$work/list"
+cp "$work/list" "$stage/$list"
+
+if [ -f "$root/$list" ]; then
+	comm -23 "$root/$list" "$work/list" | while IFS= read -r rel; do
+		echo "Removing $rel, gone from the glue"
+		rm --force "$root/$rel"
+	done
+fi
+
+(cd "$stage" && find . -mindepth 1 ! -type d -printf '%P\n') \
+	| while IFS= read -r rel; do
+		if [ -L "$stage/$rel" ] && [ -L "$root/$rel" ] \
+			&& [ "$(readlink "$stage/$rel")" = \
+				"$(readlink "$root/$rel")" ]; then
+			continue
+		fi
+		if [ ! -L "$stage/$rel" ] && [ ! -L "$root/$rel" ] \
+			&& cmp --quiet "$stage/$rel" "$root/$rel"; then
+			continue
+		fi
+		mkdir --parents "$(dirname "$root/$rel")"
+		rm --force "$root/$rel"
+		cp --archive --no-target-directory "$stage/$rel" "$root/$rel"
+	done

@@ -2,12 +2,12 @@
 # Run one test of tests/ inside the last build, in a throwaway VM, and print
 # its TAP output. For prove:
 #
-#	prove --exec tests/vm-run tests/t[0-9]*.sh
+#	prove --exec tests/vm-run tests/t[1-9]*.sh
 #	tests/vm-run tests/t1000-update-delta.sh  # one test, full log kept
 #
 # The test runs as root from a unit injected as a credential
 # (systemd.extra-unit.*), with tests/ mounted at /root/tests. The whole console
-# log goes to /tmp/caeoma-<test>-<time>.log.
+# log goes to /tmp/<ImageId>-<test>-<time>.log.
 
 set -eu
 
@@ -18,18 +18,19 @@ if [ ! -x "tests/$name.sh" ]; then
 	echo "Bail out! no executable tests/$name.sh"
 	exit 1
 fi
-log="/tmp/caeoma-$name-$(date +%Y%m%d-%H%M%S).log"
+id="$(mkosi --json summary | jq --raw-output '.Images[0].ImageId')"
+log="/tmp/$id-$name-$(date +%Y%m%d-%H%M%S).log"
 
 creds="$(mktemp --directory)"
 trap 'rm --recursive --force "$creds"' EXIT
 
 # Ordered after the network and the keyring so tests can use pacman.
-cat > "$creds/systemd.extra-unit.caeoma-test.service" <<- EOF
+cat > "$creds/systemd.extra-unit.$id-test.service" <<- EOF
 	[Unit]
-	Description=caeoma test: $name
+	Description=$id test: $name
 	Wants=systemd-networkd-wait-online.service
 	After=multi-user.target systemd-networkd-wait-online.service
-	After=caeoma-pacman-init.service systemd-bless-boot.service
+	After=$id-pacman-init.service systemd-bless-boot.service
 	FailureAction=poweroff
 
 	[Service]
@@ -37,14 +38,15 @@ cat > "$creds/systemd.extra-unit.caeoma-test.service" <<- EOF
 	TimeoutStartSec=infinity
 	StandardOutput=journal+console
 	StandardError=journal+console
-	Environment=TEST_STATE=/var/lib/caeoma-test/$name
+	Environment=TEST_STATE=/var/lib/$id-test/$name
+	Environment=IMAGE_ID=$id TEST_VM=1
 	ExecStart=/root/tests/$name.sh
 EOF
 
 timeout 3600 mkosi \
-	--machine=caeoma-test \
-	--credential="$creds/systemd.extra-unit.caeoma-test.service" \
-	--kernel-command-line-extra="systemd.wants=caeoma-test.service" \
+	--machine="$id-test" \
+	--credential="$creds/systemd.extra-unit.$id-test.service" \
+	--kernel-command-line-extra="systemd.wants=$id-test.service" \
 	--runtime-tree="$PWD/tests:/root/tests" \
 	--ram=4G --cpus=4 \
 	--console=read-only \

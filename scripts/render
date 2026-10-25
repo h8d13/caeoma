@@ -1,0 +1,33 @@
+#!/bin/bash
+# Render tree <src> into <dest>: __NAME__ becomes $IMAGE_ID in every path,
+# file content and symlink target. Run by the glue install, on the build
+# host's image and in the box (coreutils/sed only).
+# Usage: IMAGE_ID=... render <src> <dest>
+
+set -eu
+
+src="$1"
+dest="$2"
+: "${IMAGE_ID:?}"
+
+# Also the unit, os-release ID and <id>_<version> constraints: '_' would
+# split image names in two, '.' and '/' break paths and patterns.
+if ! [[ "$IMAGE_ID" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+	echo "IMAGE_ID '$IMAGE_ID' must match ^[a-z0-9][a-z0-9-]*\$" >&2
+	exit 1
+fi
+
+mkdir --parents "$dest"
+(cd "$src" && find . -mindepth 1 -printf '%P\n') | while IFS= read -r rel; do
+	from="$src/$rel"
+	to="$dest/${rel//__NAME__/$IMAGE_ID}"
+	if [ -L "$from" ]; then
+		ln --symbolic --force --no-dereference \
+			"$(readlink "$from" | sed "s/__NAME__/$IMAGE_ID/g")" "$to"
+	elif [ -d "$from" ]; then
+		mkdir --parents "$to"
+	else
+		sed "s/__NAME__/$IMAGE_ID/g" "$from" > "$to"
+		chmod --reference="$from" "$to"
+	fi
+done

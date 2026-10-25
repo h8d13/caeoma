@@ -1,6 +1,7 @@
-# git-style test library, sourced by tests/tNNNN-*.sh inside a Caeoma VM
-# (tests/vm-run). Prints TAP on stdout; the plan comes last ("1..N"), as TAP
-# allows, since a test may span reboots:
+# git-style test library, sourced by tests/tNNNN-*.sh: t0NNN on the host
+# (they set TEST_STATE), the rest inside a VM (tests/vm-run sets TEST_VM).
+# Prints TAP on stdout; the plan comes last ("1..N"), as TAP allows, since
+# a test may span reboots:
 #
 #	if test_stage 1; then
 #		test_expect_success 'desc' 'commands'
@@ -80,6 +81,8 @@ test_done() {
 		echo "# failed $test_failed among $test_count test(s)"
 	fi
 	echo "# test_done"
-	systemctl poweroff
+	if [ -n "${TEST_VM:-}" ]; then
+		systemctl poweroff
+	fi
 	exit 0
 }

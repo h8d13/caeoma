@@ -1,5 +1,6 @@
-Needs `perl` installed:
+Needs `perl` installed. Host tests (t0NNN), then VM tests in the last build:
 
 ```
-prove --exec tests/vm-run tests/t[0-9]*.sh
+prove tests/t0[0-9]*.sh
+prove --exec tests/vm-run tests/t[1-9]*.sh
 ```
