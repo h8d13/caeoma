@@ -1,0 +1,5 @@
+Needs `perl` installed:
+
+```
+prove --exec tests/vm-run tests/t[0-9]*.sh
+```

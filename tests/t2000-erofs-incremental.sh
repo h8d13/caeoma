@@ -61,6 +61,15 @@ round() {
 	umount "$out.check"
 }
 
+# set_shared_bytes <file> <set...>: bytes of <file> shared with the others
+# in <set> (btrfs filesystem du columns: total, exclusive, set shared,
+# filename).
+set_shared_bytes() {
+	local file="$1"
+	shift
+	btrfs filesystem du --raw "$@" | awk -v f="$file" '$4 == f { print $3 }'
+}
+
 # add, modify, delete file and dir, replace dir (opaque), chmod only,
 # rename, new nested dir, new symlink
 ops1() {
@@ -111,7 +120,7 @@ test_expect_success 'round 2 image equals the merged view' '
 	diff v2.erofs.ref v2.erofs.got
 '
 test_expect_success 'appended rounds share the base extents' '
-	test "$(btrfs filesystem du --raw v2.erofs | awk "NR == 2 { print \$4 }")" \
+	test "$(set_shared_bytes v2.erofs base.erofs v1.erofs v2.erofs)" \
 		-ge "$(stat --format=%s base.erofs)"
 '
 test_info btrfs filesystem du base.erofs v1.erofs v2.erofs
