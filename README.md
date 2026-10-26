@@ -15,6 +15,7 @@ This repo holds simplified versions of references:
 And mainly uses:
 
 - https://github.com/systemd/mkosi
+- https://wiki.archlinux.org/title/Mkosi
 
 ---
 
