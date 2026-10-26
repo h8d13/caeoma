@@ -17,3 +17,5 @@ And mainly uses:
 - https://github.com/systemd/mkosi
 
 ---
+
+See [HACKING](./docs/HACKING.md).
