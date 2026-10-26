@@ -2,8 +2,7 @@
 # mkosi layers it over mkosi.conf; list settings (Packages=, ...) append.
 # Then build: mkosi -B -f build. Installed boxes update with <ImageId>-update.
 #
-# Not set here: root password, locale, keymap, timezone, hostname. /etc is
-# per machine; systemd-firstboot asks on first boot.
+# Not set here: root password, locale, keymap, timezone, hostname.
 
 [Distribution]
 # Build mirror, also written into the image's pacman mirrorlist.
@@ -11,11 +10,12 @@
 #Mirror=https://mirror.example.org/archlinux
 
 [Content]
-# Extra packages baked into the image. Real hardware wants linux-firmware.
+# Extra packages baked into the image. Example:
 #Packages=
 #	linux-firmware
+#	iwd
 #	openssh
-#	vim
+#	nano
 
 # Appended to the UKI kernel command line.
 #KernelCommandLine=
