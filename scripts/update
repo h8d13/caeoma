@@ -263,6 +263,28 @@ prune() {
 		done
 }
 
+# True when pacman args $@ install packages (-S) without a system upgrade
+# (-u): they would be built against indexes newer than the rest. Sync
+# queries and cache work install nothing: -Ss -Si -Sl -Sg -Sp -Sc -Sw.
+is_partial_sync() {
+	local a sync=false upgrade=false query=false
+	for a in "$@"; do
+		case "$a" in
+		--sync) sync=true ;;
+		--sysupgrade) upgrade=true ;;
+		--search|--info|--list|--groups|--print|--clean|--downloadonly)
+			query=true ;;
+		--*) ;;
+		-*)
+			[[ "$a" != *S* ]] || sync=true
+			[[ "$a" != *u* ]] || upgrade=true
+			[[ "$a" != *[siglpcw]* ]] || query=true
+			;;
+		esac
+	done
+	[ "$sync" = true ] && [ "$upgrade" = false ] && [ "$query" = false ]
+}
+
 # One run at a time: a second one's cleanup would tear down the first's
 # work dir, a glue fetch would swap the glue a run is reading.
 lock() {
@@ -298,6 +320,11 @@ fi
 
 if [ "$#" -eq 0 ]; then
 	set -- -Syu
+fi
+if is_partial_sync "$@"; then
+	echo "-S without -u stages a partial upgrade (the repo indexes are" \
+		"shared with the box's pacman -Sy); use -Syu <packages>" >&2
+	exit 2
 fi
 lock
 
