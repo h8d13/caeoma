@@ -21,9 +21,9 @@ And concretly only uses:
 - https://github.com/systemd/mkosi
 - https://wiki.archlinux.org/title/Mkosi
 
-Specific to **Arch Linux** x86_64.
-
 ---
+
+Specific to [Arch Linux](https://archlinux.org) **x86_64**.
 
 See [HACKING](./docs/HACKING.md) and [INSTALL](./docs/INSTALL.md).
 
