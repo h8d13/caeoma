@@ -1,4 +1,4 @@
-# CAEOMA
+# Caeoma
 
 > "An aecium in some rust fungi that has no surrounding membrane"
 
