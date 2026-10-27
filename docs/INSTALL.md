@@ -5,9 +5,12 @@ A typical install on `caeoma` is slightly different but mainly still follows:
 
 But here are the steps regardless.
 
+Secure Boot must be off: the UKIs are unsigned.
+
 ## After succesfully building
 
 You should have added (your) essentials in `mkosi.local.conf` like `*-ucode`, `linux-firmware`, `iwd` ...
+
 See [HACKING](./HACKING.md) and [example conf](../mkosi.local.conf.example)
 
 You will find the image in `mkosi.output`, timestamped: `<ImageId>_<version>.raw`.
@@ -18,17 +21,15 @@ lsblk -o NAME,SIZE,MODEL,TRAN,MOUNTPOINTS
 sudo dd if=mkosi.output/caeoma_<version>.raw of=/dev/sdX bs=4M conv=fsync oflag=direct status=progress
 ```
 
-Secure Boot must be off: the UKIs are unsigned.
+## Config precedence
 
-locale, keymap, timezone and root's password come from
-`mkosi.conf` (`root:root` unless `RootPassword=` in `mkosi.local.conf`).
+`mkosi.local.conf` (yours, gitignored) over `mkosi.conf`:
 
-Once booted up: wired network is up by itself (DHCP, `systemd-networkd`). Change
-root's password, add a user:
-```console
-passwd
-useradd -m <user> && passwd <user>
-```
+- One value (`RootPassword=`, `Locale=`, `Keymap=`, `Timezone=`, `Mirror=`...):
+  `mkosi.local.conf` wins. Command line flags win over both.
+- Lists (`Packages=`, `KernelCommandLine=`...): both add up.
+
+So `root:root`, `C.UTF-8`, `us`, `UTC` unless `mkosi.local.conf` says otherwise.
 
 ## What is **different from a regular install?**
 
