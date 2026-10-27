@@ -20,7 +20,7 @@ sudo dd if=mkosi.output/caeoma_<version>.raw of=/dev/sdX bs=4M conv=fsync oflag=
 
 Secure Boot must be off: the UKIs are unsigned.
 
-First boot never prompts: locale, keymap, timezone and root's password come from
+locale, keymap, timezone and root's password come from
 `mkosi.conf` (`root:root` unless `RootPassword=` in `mkosi.local.conf`).
 
 Once booted up: wired network is up by itself (DHCP, `systemd-networkd`). Change
@@ -28,11 +28,6 @@ root's password, add a user:
 ```console
 passwd
 useradd -m <user> && passwd <user>
-```
-For Wi-Fi, `iwd` must be in the image:
-```console
-systemctl enable --now iwd
-iwctl
 ```
 
 ## What is **different from a regular install?**
