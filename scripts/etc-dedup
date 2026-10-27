@@ -1,0 +1,106 @@
+#!/bin/bash
+# Initrd, before /etc is mounted, on the first boot of a version: drop
+# entries of the /etc overlay upper that are identical to what the image
+# ships, so they follow the image again instead of shadowing it forever.
+# A copy-up that changed nothing (a tool rewrote the same bytes, a live
+# pacman -S whose package the image now has) is not a local change.
+#
+# Identical (type, mode, owner, content or link target) to the new lower,
+# or to the previous version's lower (the last vendor copy: etc-factory
+# keeps hashes for this, the previous image is that record here), means
+# not local. Kept: whiteouts (local deletions), anything below an opaque
+# dir (its lower content is hidden on purpose), real edits. An edit whose
+# vendor default changed between the two versions is reported.
+# Opt out: /etc/<id>/no-etc-dedup.
+# Usage: etc-dedup <sysroot> <image-id> <version>
+
+# pipefail: a tool failing in a pipe fails the run, which then writes no
+# stamp and is tried again next boot.
+set -eu -o pipefail
+
+root="$1"
+id="$2"
+version="$3"
+etc="$root/system/@etc"
+upper="$etc/upper"
+new="$root/usr/share/factory/etc"
+stamp="$etc/lower-version"
+old_mnt="/run/$id-etc-dedup"
+
+prev=""
+[ ! -f "$stamp" ] || prev="$(cat "$stamp")"
+[ "$prev" != "$version" ] || exit 0
+
+meta() {
+	stat -c '%a %u %g' "$1"
+}
+
+# Same type, mode, owner and content (or link target).
+same() {
+	if [ -L "$1" ]; then
+		[ -L "$2" ] && [ "$(readlink "$1")" = "$(readlink "$2")" ]
+	elif [ -f "$1" ]; then
+		[ -f "$2" ] && [ ! -L "$2" ] && [ "$(meta "$1")" = "$(meta "$2")" ] \
+			&& cmp -s "$1" "$2"
+	else
+		return 1
+	fi
+}
+
+is_opaque() {
+	[ "$(getfattr --only-values --absolute-names -n trusted.overlay.opaque \
+		"$1" 2>&1)" = y ]
+}
+
+# True when a directory between the upper root and $1 is opaque.
+# ${%/*}, not dirname: a fork per level, per file.
+below_opaque() {
+	local dir="${1%/*}"
+	while [ "$dir" != "$upper" ]; do
+		! is_opaque "$dir" || return 0
+		dir="${dir%/*}"
+	done
+	return 1
+}
+
+dedup() {
+	local old="" rel entry
+	if [ -n "$prev" ] && [ -f "$root/system/${id}_$prev.erofs" ]; then
+		mkdir -p "$old_mnt"
+		mount -t erofs -o ro "$root/system/${id}_$prev.erofs" "$old_mnt"
+		# /run outlives the initrd: never leave it mounted.
+		trap 'umount "$old_mnt"' EXIT
+		old="$old_mnt/usr/share/factory/etc"
+	fi
+	(cd "$upper" && find . \( -type f -o -type l \)) | while read -r rel; do
+		rel="${rel#./}"
+		entry="$upper/$rel"
+		below_opaque "$entry" && continue
+		if same "$entry" "$new/$rel" \
+			|| { [ -n "$old" ] && same "$entry" "$old/$rel"; }; then
+			echo "etc-dedup: /etc/$rel identical to the image, dropped"
+			rm "$entry"
+		elif [ -n "$old" ] && [ -e "$new/$rel" ] \
+			&& ! same "$old/$rel" "$new/$rel"; then
+			echo "etc-dedup: /etc/$rel kept, its image default changed"
+		fi
+	done
+	# Directories left empty, if the lower has them alike (else they carry
+	# a local mode or owner, or are local).
+	(cd "$upper" && find . -mindepth 1 -depth -type d) | while read -r rel; do
+		rel="${rel#./}"
+		entry="$upper/$rel"
+		[ -z "$(ls -A "$entry")" ] && [ -d "$new/$rel" ] || continue
+		is_opaque "$entry" && continue
+		[ "$(meta "$entry")" = "$(meta "$new/$rel")" ] || continue
+		rmdir "$entry"
+	done
+}
+
+if [ -e "$upper/$id/no-etc-dedup" ]; then
+	echo "etc-dedup: opted out (/etc/$id/no-etc-dedup)"
+else
+	dedup
+fi
+echo "$version" > "$stamp.new"
+mv "$stamp.new" "$stamp"
