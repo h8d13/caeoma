@@ -19,11 +19,10 @@ v = json.load(open(os.environ["MKOSI_CONFIG"])).get(sys.argv[1])
 print(" ".join(v) if isinstance(v, list) else (v or ""))' "$1"
 }
 
-# pacman-mirrorlist ships every server commented out. Mirror= (else Arch's
-# geo mirror); override locally by editing /etc/pacman.d/mirrorlist.
+# The image's mirror: Mirror= (else Arch's geo mirror), kept in the image
+# for finalize, which writes the mirrorlist on every build and update.
 mirror="$(mkosi_setting Mirror)"
-mirror="${mirror:-https://geo.mirror.pkgbuild.com}"
-echo "Server = $mirror/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist
+echo "${mirror:-https://geo.mirror.pkgbuild.com}" > "/usr/lib/$IMAGE_ID/mirror"
 
 # KernelCommandLine= is otherwise unused (Bootable=no). Kept in the image so
 # in-box UKI rebuilds (the update) reuse it.

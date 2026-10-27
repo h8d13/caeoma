@@ -53,6 +53,31 @@ fi
 systemctl preset-all
 systemctl preset-all --global
 
+# pacman-mirrorlist ships every server commented out: the image's mirror
+# (/usr/lib/<id>/mirror) is written again on every update, so a new
+# pacman-mirrorlist leaves no .pacnew of our own edit behind. Only written
+# when it differs (else a copy-up in the delta). Override on the box by
+# editing /etc/pacman.d/mirrorlist.
+mirrorlist=/etc/pacman.d/mirrorlist
+echo "Server = $(cat "/usr/lib/$IMAGE_ID/mirror")/\$repo/os/\$arch" \
+	> "$mirrorlist.new"
+if cmp --quiet "$mirrorlist.new" "$mirrorlist"; then
+	rm "$mirrorlist.new"
+else
+	mv "$mirrorlist.new" "$mirrorlist"
+fi
+rm --force "$mirrorlist.pacnew"
+
+# A .pacnew: the package's default changed under a file the image edits
+# (a .pacsave: a removed package's edited file). Shipped like any file,
+# and named here, where the update shows it, rather than found years on;
+# once: those factory already has came with an earlier version.
+(cd /etc && find . \( -name '*.pacnew' -o -name '*.pacsave' \) -printf '%P\n') \
+	| while IFS= read -r rel; do
+		[ -e "/usr/share/factory/etc/$rel" ] || echo "/etc/$rel: merge it" \
+			"into the image (glue tree/) or on the box"
+	done
+
 # Factory /etc (the box's /etc overlay lower) mirrors /etc minus machine
 # state (made at boot by sysusers, firstboot, ldconfig, resolved) and
 # resolv.conf (a bind mount in builds).
