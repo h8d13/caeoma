@@ -14,7 +14,15 @@ You will find the `.raw` image in `mkosi.output` timestamped.
 
 You can `dd` it to a storage device (which grows on first boot automatically).
 
-Once booted up: What is **different from a regular install?**
+Once booted up: You'll likely want to connect to internet and add a user/change root pw (`root:root`)
+```console
+ip link
+ip link set dev <interface> up
+#iwctl or nmcli
+ping <validurl>
+```
+
+## What is **different from a regular install?**
 
 1. `pacman` calls are read-only by default, they vanish on the next boot.
 2. unless you use `__NAME__-update [pacman args]` default to `-Syu` and reboot after :)
