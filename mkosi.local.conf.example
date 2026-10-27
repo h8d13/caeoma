@@ -1,8 +1,6 @@
 # Per-machine knobs. Copy to mkosi.local.conf (gitignored) and adjust.
 # mkosi layers it over mkosi.conf; list settings (Packages=, ...) append.
 # Then build: mkosi -B -f build. Installed boxes update with <ImageId>-update.
-#
-# Not set here: root password, locale, keymap, timezone, hostname.
 
 [Distribution]
 # Build mirror, also written into the image's pacman mirrorlist.
@@ -16,6 +14,13 @@
 #Snapshot=2026/10/01
 
 [Content]
+# First boot settings, over mkosi.conf's (applied on the box, no prompt).
+# A hashed password: hashed: + the output of openssl passwd -6.
+#RootPassword=hashed:$6$...
+#Locale=en_US.UTF-8
+#Keymap=fr
+#Timezone=Europe/Paris
+
 # Extra packages baked into the image. Example:
 #Packages=
 #	linux-firmware

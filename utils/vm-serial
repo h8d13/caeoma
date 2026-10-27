@@ -1,7 +1,8 @@
 #!/bin/bash
 # Drive a VM over its serial console, one shell command at a time: the
 # console reads a FIFO and writes a log; each command ends with a marker
-# carrying its exit status. Root logs in with password root. The disk is
+# carrying its exit status. Root logs in with $VM_SERIAL_PASSWORD (default
+# root; a stock image built with another RootPassword= needs it). The disk is
 # ephemeral (thrown away on stop, kept across reboots). Run from the repo
 # root:
 #
@@ -17,6 +18,7 @@ set -eu
 
 dir="${VM_SERIAL_DIR:-/tmp/$(id --user --name)-vm-serial}"
 timeout="${VM_SERIAL_TIMEOUT:-600}"
+password="${VM_SERIAL_PASSWORD:-root}"
 
 usage() {
 	sed -n "7,10{s/^#\t\{0,1\}//;p}" "$0"
@@ -70,7 +72,7 @@ login() {
 	send root
 	wait_for "$from" 'Password: *$'
 	from="$(size)"
-	send root
+	send "$password"
 	wait_for "$from" '# *$'
 	send 'stty -echo; exec env TERM=dumb PAGER=cat SYSTEMD_PAGER=cat' \
 		'SYSTEMD_COLORS=0 bash --noediting --norc'

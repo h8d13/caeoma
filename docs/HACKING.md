@@ -31,9 +31,10 @@ before a full one is built (default 50). Rebuild the UKI alone, no package
 change: `__NAME__-update -Q`.
 
 First boot never prompts (`systemd.firstboot=headless`): it applies the
-image's credentials, `tree/usr/lib/credstore/` (`firstboot.locale`,
-`firstboot.keymap`, `firstboot.timezone`, `passwd.plaintext-password.root`,
-any credential name the services import). Change them there, per branch.
+image's credentials, which mkosi writes to `/usr/lib/credstore/` from
+`Locale=`, `Keymap=`, `Timezone=` and `RootPassword=` (`mkosi.conf`: root's
+password is root, as install ISOs do; `passwd` on the box, or override in
+`mkosi.local.conf`).
 
 
 ## No backwards-compat

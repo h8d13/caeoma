@@ -5,7 +5,9 @@
 # build's). Run from the repo root.
 
 test_out=mkosi.output/tests
-test_mkosi=(--image-id=testbox --output-directory="$test_out")
+# A known root password, whatever mkosi.local.conf sets (the CLI wins).
+test_mkosi=(--image-id=testbox --output-directory="$test_out"
+	--root-password=root)
 if [ -f "$test_out/version" ]; then
 	test_mkosi+=(--image-version="$(cat "$test_out/version")")
 fi

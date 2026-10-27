@@ -1,7 +1,8 @@
 #!/bin/bash
 # First boot never prompts (systemd.firstboot=headless): it applies the
-# image's own credentials (/usr/lib/credstore), here booted with none from
-# outside. They are root-only. A local change afterwards is the box's.
+# image's own credentials (/usr/lib/credstore, mkosi's Locale=, Keymap=,
+# Timezone=, RootPassword=), here booted with none from outside. The
+# password is hashed and root-only. A local change afterwards is the box's.
 
 # shellcheck source=test-lib.sh
 . /root/tests/test-lib.sh
@@ -20,9 +21,10 @@ if test_stage 1; then
 	test_expect_success 'root has a password' '
 		getent shadow root | cut -d: -f2 | grep "^\\$"
 	'
-	test_expect_success 'credentials are root-only' '
-		test "$(stat -c %a /usr/lib/credstore)" = 700 &&
-		! find /usr/lib/credstore -type f ! -perm 0600 | grep .
+	test_expect_success 'the password credential is hashed, root-only' '
+		cred=/usr/lib/credstore/passwd.hashed-password.root &&
+		test "$(stat -c %a "$cred")" = 600 &&
+		grep "^\\$6\\$" "$cred"
 	'
 	test_expect_success 'a local timezone' '
 		timedatectl set-timezone Europe/Paris
