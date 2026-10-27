@@ -33,15 +33,27 @@ ln --symbolic usr/bin sbin
 ln --symbolic usr/lib lib
 ln --symbolic usr/lib lib64
 
+# Optional: mkosi.passphrase (gitignored) makes root LUKS2 with it, a
+# drop-in on a copy of the definitions.
+cp --recursive "$SRCDIR/install.repart" "$stage/repart.d"
+key=()
+if [ -f "$SRCDIR/mkosi.passphrase" ]; then
+	mkdir "$stage/repart.d/10-root.conf.d"
+	printf '[Partition]\nEncrypt=key-file\n' \
+		> "$stage/repart.d/10-root.conf.d/encrypt.conf"
+	key=(--key-file="$SRCDIR/mkosi.passphrase")
+fi
+
 # Relative: --root re-roots an absolute --definitions path into the stage.
-cd "$SRCDIR"
+cd "$stage"
 systemd-repart \
 	--empty=create \
 	--size=auto \
 	--dry-run=no \
 	--offline=yes \
 	--root="$stage" \
-	--definitions=install.repart \
+	--definitions=repart.d \
+	"${key[@]}" \
 	"$stage/disk.raw"
 
 # Missing definitions still yield an (empty) table; fail loudly instead.

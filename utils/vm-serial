@@ -6,7 +6,8 @@
 # ephemeral (thrown away on stop, kept across reboots). Run from the repo
 # root:
 #
-#	utils/vm-serial start [--tests]   boot (the test image with --tests)
+#	utils/vm-serial start [--tests] [mkosi args]
+#	                                  boot (the test image with --tests)
 #	utils/vm-serial run <command>     print its output, exit with its rc
 #	utils/vm-serial reboot            reboot and log in again
 #	utils/vm-serial stop              power off
@@ -21,7 +22,7 @@ timeout="${VM_SERIAL_TIMEOUT:-600}"
 password="${VM_SERIAL_PASSWORD:-root}"
 
 usage() {
-	sed -n "7,10{s/^#\t\{0,1\}//;p}" "$0"
+	sed -n "9,13{s/^#\t\{0,1\}//;p}" "$0"
 	exit 2
 }
 
@@ -103,7 +104,10 @@ start() {
 		# shellcheck source=SCRIPTDIR/../tests/mkosi-args.sh
 		. tests/mkosi-args.sh
 		args=("${test_mkosi[@]}")
+		shift
 	fi
+	# The rest goes to mkosi, e.g. --credential=...
+	args+=("$@")
 	if is_alive vm; then
 		echo "vm-serial: already running (stop it first)" >&2
 		exit 1

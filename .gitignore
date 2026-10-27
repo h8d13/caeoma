@@ -5,6 +5,7 @@
 /mkosi.version
 /mkosi.local.conf
 /mkosi.local/
+/mkosi.passphrase
 
 **/**.img
 **/**.iso

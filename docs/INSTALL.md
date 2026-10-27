@@ -21,6 +21,10 @@ lsblk -o NAME,SIZE,MODEL,TRAN,MOUNTPOINTS
 sudo dd if=mkosi.output/caeoma_<version>.raw of=/dev/sdX bs=4M conv=fsync oflag=direct status=progress
 ```
 
+Encrypted root (optional): a passphrase in `mkosi.passphrase` (0600, no newline) before building, asked at boot.
+Every disk flashed from that image shares it: change it with `cryptsetup luksChangeKey /dev/<disk>2`.
+First boot only grows the partition: `cryptsetup resize root && btrfs filesystem resize max /`.
+
 ## Config precedence
 
 `mkosi.local.conf` (yours, gitignored) over `mkosi.conf`:

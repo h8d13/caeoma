@@ -6,6 +6,7 @@
 # as mkinitcpio orders them (it skips drop-ins with -c): MODULES+=(...),
 # FILES+=(...), HOOKS=(...). HOOKS must keep systemd and <id>, or nothing
 # would mount the image. In the update /etc is the box's (see update).
+# sd-encrypt: gpt-auto unlocks a LUKS root (mkosi.passphrase), else idle.
 #
 # The initrd is two archives, the later one winning: mkinitcpio's, then
 # the image's own: /usr/lib/os-release, which changes every version (it
@@ -42,7 +43,7 @@ cat > "$work/mkinitcpio.conf" <<- EOF
 	BINARIES=()
 	FILES=()
 	HOOKS=(base systemd $detect microcode modconf kms keyboard block
-		filesystems $IMAGE_ID)
+		sd-encrypt filesystems $IMAGE_ID)
 EOF
 # Inline, not sourced at run time: their content is in the config hash the
 # initrd cache compares.
