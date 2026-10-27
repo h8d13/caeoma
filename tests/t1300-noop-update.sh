@@ -1,8 +1,9 @@
 #!/bin/bash
 # An update that changes nothing (pacman -Q), from the built image, then
 # from an in-box one: the running image is never written, the next one
-# differs from it only in os-release, the delta stays small. Timings of a
-# cold (initrd built) and a warm update.
+# differs from it only in os-release (and, on a full image, the size it
+# carries for the next ones: /usr/lib/<id>/full-size), the delta stays
+# small. Timings of a cold (initrd built) and a warm update.
 
 # shellcheck source=test-lib.sh
 . /root/tests/test-lib.sh
@@ -10,16 +11,20 @@
 
 image="/system/${IMAGE_ID}_${IMAGE_VERSION}.erofs"
 
-# Paths that differ between images $1 and $2 (content, type, mode, links).
+# Paths that differ between images $1 and $2 (content, type, mode, links),
+# but the reference size a full image's successor carries (checked apart).
 image_diff() {
 	local a="$TEST_STATE/a" b="$TEST_STATE/b"
 	mkdir -p "$a" "$b" &&
 	mount -o ro "$1" "$a" &&
 	mount -o ro "$2" "$b" &&
 	{
-		diff --recursive --brief --no-dereference "$a" "$b" || true
-		diff <(cd "$a" && find . -printf '%y %m %U:%G %p %l\n' | sort) \
-			<(cd "$b" && find . -printf '%y %m %U:%G %p %l\n' | sort) \
+		diff --recursive --brief --no-dereference --exclude=full-size \
+			"$a" "$b" || true
+		diff <(cd "$a" && find . ! -name full-size \
+				-printf '%y %m %U:%G %p %l\n' | sort) \
+			<(cd "$b" && find . ! -name full-size \
+				-printf '%y %m %U:%G %p %l\n' | sort) \
 			|| true
 	} | sed "s|$a|old|g; s|$b|new|g"
 	umount "$a" "$b"
@@ -82,6 +87,15 @@ if test_stage 1; then
 		"warm $(cat "$TEST_STATE/warm.seconds")s"
 	test_info grep '^Timings' "$TEST_STATE/cold.log" "$TEST_STATE/warm.log"
 	check_noop 'built image'
+	test_expect_success 'built image: the next one carries its size' '
+		mkdir -p "$TEST_STATE/new" &&
+		mount -o ro "$(staged)" "$TEST_STATE/new" &&
+		test "$(cat "$TEST_STATE/new/usr/lib/$IMAGE_ID/full-size")" = \
+			"$(stat -c %s "$image")"
+		status=$?
+		umount "$TEST_STATE/new"
+		exit "$status"
+	'
 	cp "$TEST_STATE/running.sha256" "$TEST_STATE/built.sha256"
 	test_reboot
 fi

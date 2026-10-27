@@ -345,6 +345,30 @@ mount -t overlay overlay \
 if [ -d "$state/glue" ]; then
 	"$state/glue/scripts/install-glue" "$state/glue" "$work/mnt"
 fi
+
+# Deltas keep the data they replace, dead but inside every later image: a
+# full image once the base outgrew the last full one of its line by
+# $growth percent (/etc/<id>/squash-growth). Each image carries that size
+# (/usr/lib/<id>/full-size); a full image none: its own size is the
+# reference, written into the next one.
+full_size_file="$work/mnt/usr/lib/$IMAGE_ID/full-size"
+growth=50
+[ ! -f "/etc/$IMAGE_ID/squash-growth" ] \
+	|| growth="$(cat "/etc/$IMAGE_ID/squash-growth")"
+size="$(stat --format=%s "$current")"
+full_size="$size"
+[ ! -f "$full_size_file" ] || full_size="$(cat "$full_size_file")"
+if [ "$squash" = false ] \
+	&& [ $((size * 100)) -gt $((full_size * (100 + growth))) ]; then
+	echo "Image grew from $full_size to $size bytes since the last full" \
+		"one (over $growth%): building a full image"
+	squash=true
+fi
+if [ "$squash" = true ]; then
+	rm --force "$full_size_file"
+elif [ ! -f "$full_size_file" ]; then
+	echo "$size" > "$full_size_file"
+fi
 phase setup
 
 mount_api
@@ -402,6 +426,11 @@ else
 		# full image (48bit) keeps the following deltas clear of it.
 		echo "Incremental build failed; building a full image instead" >&2
 		rm "$next.erofs"
+		squash=true
+		# A full image carries no reference: whiteout its copy.
+		rm --force "$work/upper/usr/lib/$IMAGE_ID/full-size"
+		mkdir --parents "$work/upper/usr/lib/$IMAGE_ID"
+		mknod "$work/upper/usr/lib/$IMAGE_ID/full-size" c 0 0
 		# The same merged view, read-only: the upper (whiteouts as
 		# expanded above) as top lower layer.
 		mount -t overlay overlay \
