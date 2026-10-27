@@ -40,6 +40,15 @@ done <<< "$rules"
 # The build's keyring holds a private lsign key: never ship it.
 rm --recursive --force /etc/pacman.d/gnupg
 
+# The image's credentials (tree/usr/lib/credstore: first boot settings,
+# root password), root-only. The glue copies them as git has them (0644):
+# set here, only where they differ (a chmod is a copy-up in the update).
+if [ -d /usr/lib/credstore ]; then
+	[ "$(stat --format=%a /usr/lib/credstore)" = 700 ] \
+		|| chmod 0700 /usr/lib/credstore
+	find /usr/lib/credstore -type f ! -perm 0600 -exec chmod 0600 {} +
+fi
+
 # PAM falls back to /usr/lib/pam.d per service.
 if [ -d /etc/pam.d ]; then
 	find /etc/pam.d -mindepth 1 -exec mv {} /usr/lib/pam.d \;

@@ -151,9 +151,14 @@ bsdtar --create --format newc --uid 0 --gid 0 --file "$work/image.cpio" \
 	--directory "$work/image" usr etc
 
 # No root=: gpt-auto finds the root partition, @system is mounted as /.
+# systemd.firstboot=headless: first boot never prompts, it applies the
+# image's credentials (/usr/lib/credstore: locale, keymap, timezone, root
+# password) and nothing else.
+base="rw rootflags=subvol=@system,compress=zstd systemd.firstboot=headless"
 ukify build \
 	--linux "/usr/lib/modules/$kver/vmlinuz" \
+	--uname "$kver" \
 	--initrd "$initrd" \
 	--initrd "$work/image.cpio" \
-	--cmdline "rw rootflags=subvol=@system,compress=zstd${extra:+ $extra}" \
+	--cmdline "$base${extra:+ $extra}" \
 	--output "$out"

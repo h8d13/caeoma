@@ -115,10 +115,6 @@ start() {
 	echo $! > "$dir/holder.pid"
 	setsid mkosi "${args[@]}" \
 		--machine="$(id --user --name)-vm-serial" \
-		--credential=passwd.plaintext-password.root=root \
-		--credential=firstboot.locale=C.UTF-8 \
-		--credential=firstboot.keymap=us \
-		--credential=firstboot.timezone=UTC \
 		--ram=4G --cpus=4 \
 		--console=native \
 		--ephemeral=yes \

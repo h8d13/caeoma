@@ -26,7 +26,7 @@ EOF
 export SYSTEMD_ESP_PATH=/usr/share/factory/boot
 # shellcheck disable=SC2174 # 0700 on Linux/ only, parents keep the umask
 mkdir --parents --mode 0700 "$SYSTEMD_ESP_PATH/EFI/Linux"
-if bootctl is-installed; then
+if bootctl --quiet is-installed; then
 	# Copies only a newer sd-boot: an identical one would land in the delta.
 	bootctl update --no-variables --graceful
 else
