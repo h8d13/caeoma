@@ -69,7 +69,10 @@ tests/vm-run tests/t1300-noop-update.sh   # one VM test
 Some tests take a bit of time (several boots).
 
 Tools: `utils/erofs-diff` (two images), `utils/uki-inspect` (what a UKI
-boots). References: `docs/mkosi` (the version in use), `docs/particleos`,
+boots), `utils/vm-serial` (drive a VM over its serial console, one command
+at a time: `start --tests`, `run <cmd>`, `reboot`, `stop`).
+
+References: `docs/mkosi` (the version in use), `docs/particleos`,
 `docs/kde-linux` with `docs/etc-factory` (same stack; /etc by copy +
 hash tracking), `docs/transactional-update` (in-box btrfs snapshot
 updates; dropped its /etc overlay in 5.0.0, see NEWS).

@@ -1,0 +1,162 @@
+#!/bin/bash
+# Drive a VM over its serial console, one shell command at a time: the
+# console reads a FIFO and writes a log; each command ends with a marker
+# carrying its exit status. Root logs in with password root. The disk is
+# ephemeral (thrown away on stop, kept across reboots). Run from the repo
+# root:
+#
+#	utils/vm-serial start [--tests]   boot (the test image with --tests)
+#	utils/vm-serial run <command>     print its output, exit with its rc
+#	utils/vm-serial reboot            reboot and log in again
+#	utils/vm-serial stop              power off
+#
+# State in $VM_SERIAL_DIR (default /tmp/<user>-vm-serial); the whole
+# console is in its out file. $VM_SERIAL_TIMEOUT bounds each wait (600s).
+
+set -eu
+
+dir="${VM_SERIAL_DIR:-/tmp/$(id --user --name)-vm-serial}"
+timeout="${VM_SERIAL_TIMEOUT:-600}"
+
+usage() {
+	sed -n "7,10{s/^#\t\{0,1\}//;p}" "$0"
+	exit 2
+}
+
+# Console text from byte offset $1 on, without colors and carriage returns.
+since() {
+	tail --bytes=+"$(($1 + 1))" "$dir/out" | sed \
+		-e 's/\x1b\[[0-9;?]*[A-Za-z]//g' \
+		-e 's/\x1b\][^\x07\x1b]*\(\x07\|\x1b\\\)//g' \
+		-e 's/\r//g'
+}
+
+# True while the process in $dir/$1.pid runs.
+is_alive() {
+	[ -f "$dir/$1.pid" ] && [ -e "/proc/$(cat "$dir/$1.pid")" ]
+}
+
+size() {
+	stat --format=%s "$dir/out"
+}
+
+# Wait until the console from offset $1 on matches ERE $2; fails on
+# timeout or when the VM is gone.
+wait_for() {
+	local deadline=$((SECONDS + timeout))
+	until since "$1" | grep --quiet --extended-regexp -- "$2"; do
+		if ! is_alive vm; then
+			echo "vm-serial: VM exited" >&2
+			return 1
+		fi
+		if [ "$SECONDS" -ge "$deadline" ]; then
+			echo "vm-serial: timeout waiting for '$2'" >&2
+			return 1
+		fi
+		sleep 0.5
+	done
+}
+
+send() {
+	printf '%s\n' "$*" > "$dir/in"
+}
+
+# From the login prompt to a plain shell: no line editing (readline would
+# echo every command), no prompt, no pager, no colors.
+login() {
+	local from="$1"
+	wait_for "$from" 'login: *$'
+	from="$(size)"
+	send root
+	wait_for "$from" 'Password: *$'
+	from="$(size)"
+	send root
+	wait_for "$from" '# *$'
+	send 'stty -echo; exec env TERM=dumb PAGER=cat SYSTEMD_PAGER=cat' \
+		'SYSTEMD_COLORS=0 bash --noediting --norc'
+	# Its output is the old shell echoing the line above.
+	run 'PS1= PS2=' > /dev/null
+}
+
+# Run $1, print what it wrote between its echo and its marker, return its
+# status. The marker is split in the sent line so only its output matches.
+run() {
+	local from n out status
+	from="$(size)"
+	n="$EPOCHSECONDS$RANDOM"
+	send "$1; echo __END_\"\"${n}__ rc=\$?"
+	wait_for "$from" "__END_${n}__ rc=[0-9]+"
+	# One read: output arriving later must not split body and status.
+	out="$(since "$from")"
+	printf '%s\n' "$out" | sed -n -e "/__END_${n}__ rc=/q" \
+		-e "/__END_\"\"${n}__/d" -e p
+	status="$(printf '%s\n' "$out" \
+		| sed -n "s/^.*__END_${n}__ rc=\([0-9]*\).*$/\1/p")"
+	return "$status"
+}
+
+start() {
+	local args=()
+	if [ "${1:-}" = --tests ]; then
+		# shellcheck source=SCRIPTDIR/../tests/mkosi-args.sh
+		. tests/mkosi-args.sh
+		args=("${test_mkosi[@]}")
+	fi
+	if is_alive vm; then
+		echo "vm-serial: already running (stop it first)" >&2
+		exit 1
+	fi
+	rm --recursive --force "$dir"
+	mkdir --parents "$dir"
+	mkfifo "$dir/in"
+	: > "$dir/out"
+	# Holds the FIFO open between commands, or the console sees EOF.
+	sleep infinity > "$dir/in" &
+	echo $! > "$dir/holder.pid"
+	setsid mkosi "${args[@]}" \
+		--machine="$(id --user --name)-vm-serial" \
+		--credential=passwd.plaintext-password.root=root \
+		--credential=firstboot.locale=C.UTF-8 \
+		--credential=firstboot.keymap=us \
+		--credential=firstboot.timezone=UTC \
+		--ram=4G --cpus=4 \
+		--console=native \
+		--ephemeral=yes \
+		vm < "$dir/in" > "$dir/out" 2>&1 &
+	echo $! > "$dir/vm.pid"
+	login 0
+	echo "vm-serial: ready, console log in $dir/out"
+}
+
+reboot() {
+	local from
+	from="$(size)"
+	send 'systemctl reboot'
+	login "$from"
+}
+
+stop() {
+	local deadline=$((SECONDS + timeout))
+	if is_alive vm; then
+		send 'systemctl poweroff'
+		while is_alive vm; do
+			if [ "$SECONDS" -ge "$deadline" ]; then
+				kill "$(cat "$dir/vm.pid")"
+				break
+			fi
+			sleep 0.5
+		done
+	fi
+	if is_alive holder; then
+		kill "$(cat "$dir/holder.pid")"
+	fi
+	rm --force "$dir/in" "$dir/vm.pid" "$dir/holder.pid"
+}
+
+case "${1:-}" in
+start) shift; start "$@" ;;
+run) shift; [ "$#" -gt 0 ] || usage; run "$*" ;;
+reboot) reboot ;;
+stop) stop ;;
+*) usage ;;
+esac
