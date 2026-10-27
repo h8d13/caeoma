@@ -11,13 +11,9 @@
 
 esp=/boot/EFI/Linux
 
-# Stage an update from the running image; its version into $TEST_STATE/$1.
+# Stage a no-op update (on the newest bootable one).
 stage() {
-	"$IMAGE_ID-update" --noconfirm -Q > "$TEST_STATE/$1.log" 2>&1 ||
-		{ cat "$TEST_STATE/$1.log"; return 1; }
-	sed -n "s/^Staged $IMAGE_ID \([0-9]*\);.*/\1/p" "$TEST_STATE/$1.log" \
-		> "$TEST_STATE/$1"
-	test -s "$TEST_STATE/$1"
+	test_update "$1" --noconfirm -Q
 }
 
 v() {

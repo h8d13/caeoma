@@ -1,17 +1,22 @@
 #!/bin/bash
-# <id>-update: derive the next image from the running one and stage it.
+# <id>-update: derive the next image from the newest one and stage it.
 #
 #   <id>-update [--squash] [pacman args]
 #                                 default -Syu; e.g. -Syu foo bar
 #                                 --squash: full image instead of a delta
+#   <id>-update discard           delete staged versions never booted
 #   <id>-update glue [url]        fetch a repo tarball (.tar.gz); its
 #                                 scripts/ and tree/ go into every
 #                                 following image. URL kept in /etc/<id>.
 #
-# The running erofs (whole tree) is the lower layer of an overlay; pacman
+# The base is the newest staged version that can still boot, else the
+# running one: updates staged before a reboot add up instead of the last
+# one silently replacing the others. -S without -u is refused (a partial
+# upgrade). A full image is built once deltas grew the base too much.
+# The base erofs (whole tree) is the lower layer of an overlay; pacman
 # runs in it like arch-chroot does (host /proc /sys /dev /run, so hooks see
 # real hardware); finalize re-freezes the tree. The next erofs is a reflink
-# copy of the running one with only the upper dir appended (btrfs shares the
+# copy of the base with only the upper dir appended (btrfs shares the
 # rest), or with --squash (and as fallback when that fails) the whole
 # merged view, dropping data that later appends left dead. The image is
 # renamed into /system, the UKI copied to the ESP with boot counting; the
@@ -32,7 +37,7 @@ work="/system/.$IMAGE_ID-update"
 keep=3
 
 usage() {
-	sed -n "2,10{s/^# \{0,1\}//;s/<id>/$IMAGE_ID/g;p}" "$0"
+	sed -n "2,11{s/^# \{0,1\}//;s/<id>/$IMAGE_ID/g;p}" "$0"
 }
 
 fetch_glue() {
@@ -196,6 +201,34 @@ is_spent() {
 			> /dev/null
 }
 
+# Newest version above the running one that can still boot, if any.
+newest_staged() {
+	local v
+	versions | while IFS= read -r v; do
+		if [ "$v" -gt "$IMAGE_VERSION" ] && has_uki "$v" \
+			&& ! is_spent "$v"; then
+			echo "$v"
+		fi
+	done | tail --lines=1
+}
+
+# Staged versions (newer than the running one) are what the next update
+# builds on: deleting them starts over from the running version.
+discard() {
+	local v staged
+	staged="$(versions | while IFS= read -r v; do
+		[ "$v" -le "$IMAGE_VERSION" ] || echo "$v"
+	done)"
+	if [ -z "$staged" ]; then
+		echo "Nothing staged"
+		return
+	fi
+	for v in $staged; do
+		echo "Discarding staged $IMAGE_ID $v"
+		remove_version "$v"
+	done
+}
+
 # Image (immutable: tmpfiles, install_next; lifted only to delete) and UKI
 # of version $1.
 remove_version() {
@@ -240,7 +273,6 @@ lock() {
 	fi
 }
 
-squash=false
 case "${1:-}" in
 glue)
 	shift
@@ -248,27 +280,41 @@ glue)
 	fetch_glue "$@"
 	exit 0
 	;;
+discard)
+	lock
+	discard
+	exit 0
+	;;
 -h|--help)
 	usage
 	exit 0
 	;;
---squash)
+esac
+squash=false
+if [ "${1:-}" = --squash ]; then
 	squash=true
 	shift
-	;;
-esac
+fi
 
 if [ "$#" -eq 0 ]; then
 	set -- -Syu
 fi
 lock
 
+base="$IMAGE_VERSION"
+staged="$(newest_staged)"
+if [ -n "$staged" ]; then
+	base="$staged"
+	echo "Building on staged $IMAGE_ID $base (not booted yet;" \
+		"$IMAGE_ID-update discard starts over)"
+fi
 version="$(date --utc +%Y%m%d%H%M%S)"
-if [ "$version" -le "$IMAGE_VERSION" ]; then
-	echo "Next version $version is not newer than $IMAGE_VERSION" >&2
+if [ "$version" -le "$base" ]; then
+	echo "Next version $version is not newer than $base" >&2
 	exit 1
 fi
-current="/system/${IMAGE_ID}_${IMAGE_VERSION}.erofs"
+current="/system/${IMAGE_ID}_${base}.erofs"
+
 next="$work/out/${IMAGE_ID}_$version"
 
 cleanup

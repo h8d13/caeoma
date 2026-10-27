@@ -61,6 +61,19 @@ test_expect_success() {
 	test_save
 }
 
+# test_update <name> [args]: stage an update, its log into
+# $TEST_STATE/<name>.log (shown on failure), the staged version into
+# $TEST_STATE/<name>.
+test_update() {
+	local name="$1"
+	shift
+	"$IMAGE_ID-update" "$@" > "$TEST_STATE/$name.log" 2>&1 ||
+		{ cat "$TEST_STATE/$name.log"; return 1; }
+	sed -n "s/^Staged $IMAGE_ID \([0-9]*\);.*/\1/p" \
+		"$TEST_STATE/$name.log" > "$TEST_STATE/$name"
+	test -s "$TEST_STATE/$name"
+}
+
 # Run a command for its output only, as TAP comments (not a test).
 test_info() {
 	"$@" 2>&1 | sed 's/^/# /'
