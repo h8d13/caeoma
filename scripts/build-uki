@@ -1,7 +1,11 @@
 #!/bin/bash
 # Build the UKI: kernel + initrd + cmdline + os-release. Extra cmdline
 # comes from the image (/usr/lib/<id>/cmdline, written at build time from
-# KernelCommandLine=) so in-box rebuilds keep it.
+# KernelCommandLine=) so in-box rebuilds keep it, then /etc/kernel/cmdline.
+# The initrd config is the image's own, then /etc/mkinitcpio.conf.d/*.conf
+# as mkinitcpio orders them (it skips drop-ins with -c): MODULES+=(...),
+# FILES+=(...), HOOKS=(...). HOOKS must keep systemd and <id>, or nothing
+# would mount the image. In the update /etc is the box's (see update).
 #
 # The initrd is two archives, the later one winning: mkinitcpio's, then
 # the image's own: /usr/lib/os-release, which changes every version (it
@@ -9,16 +13,25 @@
 # $INITRD_CACHE (the in-box update) mkinitcpio's is reused while its
 # manifest matches: kernel, config, versions of the packages owning what
 # it holds or builds it, hashes of the files no package owns.
-# Usage: IMAGE_ID=... [INITRD_CACHE=<dir>] build-uki <output.efi>
+#
+# autodetect: an initrd for this machine only (its modules, its CPU's
+# microcode), built on the box it boots; its manifest adds the hardware
+# (modaliases, CPU). Without: every module, every microcode (any machine:
+# the mkosi build, the fallback UKI).
+# Usage: IMAGE_ID=... [INITRD_CACHE=<dir>] build-uki <output.efi> [autodetect]
 
 set -e
 
 out="$1"
+variant="${2:-generic}"
 : "${IMAGE_ID:?}"
-cache="${INITRD_CACHE:-}"
-cmdline="/usr/lib/$IMAGE_ID/cmdline"
+cache="${INITRD_CACHE:+$INITRD_CACHE/$variant}"
+detect=""
+[ "$variant" != autodetect ] || detect=autodetect
 extra=""
-[ ! -f "$cmdline" ] || extra="$(cat "$cmdline")"
+for cmdline in "/usr/lib/$IMAGE_ID/cmdline" /etc/kernel/cmdline; do
+	[ ! -f "$cmdline" ] || extra="${extra:+$extra }$(cat "$cmdline")"
+done
 modules=(/usr/lib/modules/*)
 kver="$(basename "${modules[-1]}")"
 work="$(mktemp --directory)"
@@ -28,8 +41,28 @@ cat > "$work/mkinitcpio.conf" <<- EOF
 	MODULES=(erofs loop btrfs)
 	BINARIES=()
 	FILES=()
-	HOOKS=(base systemd modconf kms keyboard block filesystems $IMAGE_ID)
+	HOOKS=(base systemd $detect microcode modconf kms keyboard block
+		filesystems $IMAGE_ID)
 EOF
+# Inline, not sourced at run time: their content is in the config hash the
+# initrd cache compares.
+dropins=/etc/mkinitcpio.conf.d
+if [ -d "$dropins" ]; then
+	find "$dropins" -maxdepth 1 -xtype f -name '*.conf' -printf '%f\n' \
+		| LC_ALL=C.UTF-8 sort --version-sort --unique \
+		| while IFS= read -r conf; do
+			echo "# $dropins/$conf"
+			cat "$dropins/$conf"
+		done >> "$work/mkinitcpio.conf"
+fi
+# shellcheck disable=SC1091 # composed above
+if ! (. "$work/mkinitcpio.conf" \
+	&& [[ " ${HOOKS[*]} " == *" systemd "* ]] \
+	&& [[ " ${HOOKS[*]} " == *" $IMAGE_ID "* ]]); then
+	echo "HOOKS must keep systemd and $IMAGE_ID (check $dropins):" >&2
+	cat "$work/mkinitcpio.conf" >&2
+	exit 1
+fi
 
 # Tree files behind initrd $1: what it took verbatim (same path and
 # bytes; not its busybox applet links or generated files, which
@@ -67,6 +100,15 @@ record_inputs() {
 manifest() {
 	echo "kernel $kver"
 	echo "config $(sha256sum < "$work/mkinitcpio.conf")"
+	# The microcode hook's early archive is generated from these.
+	pacman --query intel-ucode amd-ucode 2>&1 || true
+	if [ -n "$detect" ]; then
+		echo "hardware $( {
+			find /sys/devices -name modalias -exec cat {} + | sort --unique
+			grep --max-count=4 -E '^(vendor_id|cpu family|model|stepping)' \
+				/proc/cpuinfo
+		} | sha256sum)"
+	fi
 	xargs --no-run-if-empty pacman --query < "$work/pkgs" 2>&1 || true
 	xargs --no-run-if-empty sha256sum < "$work/files" 2>&1 || true
 }

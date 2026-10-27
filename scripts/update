@@ -2,7 +2,8 @@
 # <id>-update: derive the next image from the newest one and stage it.
 #
 #   <id>-update [--squash] [pacman args]
-#                                 default -Syu; e.g. -Syu foo bar
+#                                 default -Syu; e.g. -Syu foo bar;
+#                                 -Q: no package change (new initrd/UKI)
 #                                 --squash: full image instead of a delta
 #   <id>-update discard           delete staged versions never booted
 #   <id>-update glue [url]        fetch a repo tarball (.tar.gz); its
@@ -37,7 +38,7 @@ work="/system/.$IMAGE_ID-update"
 keep=3
 
 usage() {
-	sed -n "2,11{s/^# \{0,1\}//;s/<id>/$IMAGE_ID/g;p}" "$0"
+	sed -n "2,12{s/^# \{0,1\}//;s/<id>/$IMAGE_ID/g;p}" "$0"
 }
 
 fetch_glue() {
@@ -62,6 +63,9 @@ fetch_glue() {
 # Unmounting in reverse mount order; safe to call at any point.
 cleanup() {
 	local m
+	if mountpoint --quiet "$work/mnt/etc"; then
+		umount "$work/mnt/etc"
+	fi
 	for m in "etc/$IMAGE_ID" "${state#/}/initrd" "${carried[@]}" \
 		var/lib/pacman/sync \
 		var/cache/pacman/pkg etc/resolv.conf etc/pacman.d/gnupg \
@@ -75,6 +79,9 @@ cleanup() {
 	fi
 	if mountpoint --quiet "$work/lower"; then
 		umount "$work/lower"
+	fi
+	if [ -d "$work/etc-snap" ]; then
+		btrfs subvolume delete "$work/etc-snap"
 	fi
 	rm --recursive --force "$work"
 }
@@ -140,8 +147,25 @@ umount_carried() {
 	carried=()
 }
 
-# The box's /etc/<id> (local state.d rules) for finalize in the tree;
-# finalize keeps it out of factory as machine state.
+# The /etc the box boots the next version with, over the tree's /etc
+# while postinst builds the initrd (drop-ins, modprobe.d, vconsole.conf,
+# FILES+= targets, /etc/kernel/cmdline): the box's upper on the tree's
+# /etc, read-only. The upper from a snapshot: it changes under the live
+# /etc overlay meanwhile.
+mount_box_etc() {
+	btrfs subvolume snapshot -r /system/@etc "$work/etc-snap"
+	mount -t overlay overlay \
+		-o "ro,lowerdir=$work/etc-snap/upper:$work/mnt/etc" "$work/mnt/etc"
+}
+
+umount_box_etc() {
+	umount "$work/mnt/etc"
+	btrfs subvolume delete "$work/etc-snap"
+}
+
+# The box's /etc/<id> in the tree, read-only, from pacman to finalize:
+# local state.d rules for finalize, which keeps it out of factory as
+# machine state.
 mount_local_config() {
 	[ -d "/etc/$IMAGE_ID" ] || return 0
 	mkdir --parents "$work/mnt/etc/$IMAGE_ID"
@@ -173,12 +197,16 @@ expand_opaque() {
 # a temporary name so the ESP never holds a partial entry. +3: boot-counting
 # tries, systemd-bless-boot drops the counter once the boot is good.
 install_next() {
-	local uki="/boot/EFI/Linux/${IMAGE_ID}_$version+3.efi"
+	local esp="/boot/EFI/Linux/${IMAGE_ID}_$version"
 	chmod 0444 "$next.erofs"
 	mv "$next.erofs" "/system/${IMAGE_ID}_$version.erofs"
 	chattr +i "/system/${IMAGE_ID}_$version.erofs"
-	cp "$next.efi" "$uki.tmp"
-	mv "$uki.tmp" "$uki"
+	# Fallback first: the main UKI is what makes the version installed.
+	# "-" sorts before ".", so sd-boot puts it just under the main UKI.
+	cp "$next.fallback.efi" "$esp-fallback+3.efi.tmp"
+	mv "$esp-fallback+3.efi.tmp" "$esp-fallback+3.efi"
+	cp "$next.efi" "$esp+3.efi.tmp"
+	mv "$esp+3.efi.tmp" "$esp+3.efi"
 }
 
 versions() {
@@ -235,7 +263,8 @@ remove_version() {
 	chattr -i "/system/${IMAGE_ID}_$1.erofs"
 	rm "/system/${IMAGE_ID}_$1.erofs"
 	rm --force "/boot/EFI/Linux/${IMAGE_ID}_$1.efi" \
-		"/boot/EFI/Linux/${IMAGE_ID}_$1+"*.efi
+		"/boot/EFI/Linux/${IMAGE_ID}_$1+"*.efi \
+		"/boot/EFI/Linux/${IMAGE_ID}_$1-fallback"*.efi
 }
 
 # Unbootable versions first, they would count towards $keep: leftovers of
@@ -416,8 +445,14 @@ phase pacman
 # is made of: pacman's binds stay until then, as during the transaction.
 mkdir --parents "$state/initrd" "$work/mnt$state/initrd"
 mount --bind "$state/initrd" "$work/mnt$state/initrd"
+if [ -e /system/@etc/upper/mkinitcpio.conf ]; then
+	echo "Edits to /etc/mkinitcpio.conf are not used (the image composes" \
+		"its own): move them to /etc/mkinitcpio.conf.d/*.conf" >&2
+fi
+mount_box_etc
 chroot "$work/mnt" env IMAGE_VERSION="$version" INITRD_CACHE="$state/initrd" \
-	"/usr/lib/$IMAGE_ID/postinst" /uki.efi
+	INITRD_AUTODETECT=1 "/usr/lib/$IMAGE_ID/postinst" /uki.efi
+umount_box_etc
 umount "$work/mnt$state/initrd"
 umount_pacman
 # Off before finalize: a bound /var/lib/<x> shows content next to its
@@ -430,6 +465,7 @@ if mountpoint --quiet "$work/mnt/etc/$IMAGE_ID"; then
 	umount "$work/mnt/etc/$IMAGE_ID"
 fi
 mv "$work/mnt/uki.efi" "$next.efi"
+mv "$work/mnt/uki.fallback.efi" "$next.fallback.efi"
 umount_api
 phase finalize
 

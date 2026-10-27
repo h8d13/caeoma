@@ -3,8 +3,10 @@
 # os-release, sd-boot in the factory ESP, the UKI at <output.efi> (outside
 # the image: placing it is the caller's job). Run inside the tree, by the
 # mkosi build and by the in-box update. The initrd embeds os-release, which
-# pins the /usr version, so os-release comes first.
-# Usage: IMAGE_ID=... IMAGE_VERSION=... postinst <output.efi>
+# pins the /usr version, so os-release comes first. Writes only /usr: the
+# update shows it the box's /etc (read-only), the one it will boot with.
+# Usage: IMAGE_ID=... IMAGE_VERSION=... [INITRD_AUTODETECT=1] \
+#	postinst <output.efi>
 
 set -e
 
@@ -32,4 +34,12 @@ else
 	bootctl install --no-variables --random-seed=no
 fi
 
-"/usr/lib/$IMAGE_ID/build-uki" "$out"
+# On the box (INITRD_AUTODETECT, the update): the UKI for this machine,
+# and a fallback for any (<output>.fallback.efi), booted when the first
+# spent its tries, e.g. after a hardware change.
+if [ -n "${INITRD_AUTODETECT:-}" ]; then
+	"/usr/lib/$IMAGE_ID/build-uki" "$out" autodetect
+	"/usr/lib/$IMAGE_ID/build-uki" "${out%.efi}.fallback.efi"
+else
+	"/usr/lib/$IMAGE_ID/build-uki" "$out"
+fi
