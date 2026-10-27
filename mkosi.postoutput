@@ -55,6 +55,10 @@ systemd-repart \
 	--definitions=repart.d \
 	"${key[@]}" \
 	"$stage/disk.raw"
+# No grow-file-system flag on root (repart sets it, even with
+# GrowFileSystem=no): gpt-auto would add systemd-growfs, which cannot resize
+# an opened LUKS2 root. The initrd grows it instead (the usr generator).
+sfdisk --part-attrs "$stage/disk.raw" 2 ""
 
 # Missing definitions still yield an (empty) table; fail loudly instead.
 sfdisk --dump "$stage/disk.raw"

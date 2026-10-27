@@ -23,11 +23,11 @@ sudo dd if=mkosi.output/caeoma_<version>.raw of=/dev/sdX bs=4M conv=fsync oflag=
 
 Encrypted root (optional): a passphrase in `mkosi.passphrase` (0600, no newline) before building, asked at boot.
 Every disk flashed from that image shares it: change it with `cryptsetup luksChangeKey /dev/<disk>2`.
-First boot only grows the partition: `cryptsetup resize root && btrfs filesystem resize max /`.
+It fills the disk on the first boot, like a plain root.
 
 ## Config precedence
 
-`mkosi.local.conf` (yours, gitignored) over `mkosi.conf`:
+`mkosi.local.conf` (gitignored) over `mkosi.conf`:
 
 - One value (`RootPassword=`, `Locale=`, `Keymap=`, `Timezone=`, `Mirror=`...):
   `mkosi.local.conf` wins. Command line flags win over both.
@@ -37,16 +37,15 @@ So `root:root`, `C.UTF-8`, `us`, `UTC` unless `mkosi.local.conf` says otherwise.
 
 ## What is **different from a regular install?**
 
-1. `/usr` is the image, read-only. A plain `pacman -S` still works, on a throwaway
-   `/usr` gone at the next boot (to try things).
+1. `/usr` is the image, read-only. Plain `pacman` still works, on a throwaway
+   overlay gone at the next boot (to try things).
 2. To keep packages: `__NAME__-update [pacman args]` (`caeoma-update`), default `-Syu`,
    then reboot :) It stages a new image; each update builds on the newest staged one,
    `__NAME__-update discard` starts over. `-S` without `-u` is refused (partial upgrade).
-3. `/etc`, `/var` and `/home` are yours and outlive updates. `/etc` shows the image's
+3. `/etc`, `/var` and `/home` outlive updates. `/etc` shows the image's
    defaults under your changes: edit, delete, `systemctl disable` as usual.
 4. The update builds from your config: `/etc/pacman.conf` (repos), and for the
    kernel/initrd `/etc/kernel/cmdline` and `/etc/mkinitcpio.conf.d/*.conf`.
-   `__NAME__-update -Q` rebuilds them with no package change.
 5. Each version boots a UKI made for this machine, with a generic fallback used
    on its own if that one fails (e.g. new hardware). Older versions stay in the
    boot menu.

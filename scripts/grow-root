@@ -1,0 +1,15 @@
+#!/bin/bash
+# Initrd, before the root is unlocked or mounted: grow the root partition
+# into the free space of the disk holding <partition> (the ESP sd-boot
+# booted from; the root is on the same disk), per /usr/lib/<id>/repart.d.
+# A LUKS2 root then opens at its full size on the first boot. No-op once
+# grown. The file system follows once mounted (the usr generator).
+# Usage: grow-root <id> <partition>
+
+set -eu
+
+id="$1"
+part="$(basename "$(readlink -f "$2")")"
+disk="$(basename "$(readlink -f "/sys/class/block/$part/..")")"
+exec systemd-repart --dry-run=no --definitions="/usr/lib/$id/repart.d" \
+	"/dev/$disk"
