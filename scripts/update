@@ -350,7 +350,15 @@ phase setup
 mount_api
 mount_pacman
 mount_carried
-pacman --sysroot "$work/mnt" "$@"
+mount_local_config
+# --root, not --sysroot: the box's own pacman.conf (repos, mirrors, its
+# Includes as the box resolves them), the one its pacman -Sy filled the
+# shared indexes with. Scriptlets and the tree's hooks still run chrooted
+# in the tree, the package DB is the tree's (default DBPath under root).
+# Hook dirs (else only the box's, from its pacman.conf): the tree's /etc
+# ones as this update's glue rendered them, then the box's, which win.
+pacman --root "$work/mnt" --hookdir "$work/mnt/etc/pacman.d/hooks" \
+	--hookdir /etc/pacman.d/hooks "$@"
 phase pacman
 
 # The box's initrd cache for build-uki, which asks pacman what its initrd
@@ -366,7 +374,6 @@ umount_pacman
 umount_carried
 phase postinst
 
-mount_local_config
 chroot "$work/mnt" "/usr/lib/$IMAGE_ID/finalize"
 if mountpoint --quiet "$work/mnt/etc/$IMAGE_ID"; then
 	umount "$work/mnt/etc/$IMAGE_ID"
