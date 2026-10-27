@@ -1,28 +1,52 @@
 # Walk-through
 
-A typical install on `caeoma` is slightly different but mainly still follows: 
+A typical install on `caeoma` is slightly different but mainly still follows:
 [Install Wiki](https://wiki.archlinux.org/title/Installation_guide)
 
 But here are the steps regardless.
 
-## After succesfully building 
+## After succesfully building
 
-You should have added (your) essentials in `mkosi.local.conf` like `*-ucode`, `linux-firmware`, `iwd` ... 
+You should have added (your) essentials in `mkosi.local.conf` like `*-ucode`, `linux-firmware`, `iwd` ...
 See [HACKING](./HACKING.md) and [example conf](../mkosi.local.conf.example)
 
-You will find the `.raw` image in `mkosi.output` timestamped.
+You will find the image in `mkosi.output`, timestamped: `<ImageId>_<version>.raw`.
 
-You can `dd` it to a storage device (which grows on first boot automatically).
-
-Once booted up: You'll likely want to connect to internet and add a user/change root pw (`root:root`)
+`dd` it to the whole disk (not a partition), it grows to fill it on first boot:
 ```console
-ip link
-ip link set dev <interface> up
-#iwctl or nmcli
-ping <validurl>
+lsblk -o NAME,SIZE,MODEL,TRAN,MOUNTPOINTS
+sudo dd if=mkosi.output/caeoma_<version>.raw of=/dev/sdX bs=4M conv=fsync oflag=direct status=progress
+```
+
+Secure Boot must be off: the UKIs are unsigned.
+
+First boot never prompts: locale, keymap, timezone and root's password come from
+`mkosi.conf` (`root:root` unless `RootPassword=` in `mkosi.local.conf`).
+
+Once booted up: wired network is up by itself (DHCP, `systemd-networkd`). Change
+root's password, add a user:
+```console
+passwd
+useradd -m <user> && passwd <user>
+```
+For Wi-Fi, `iwd` must be in the image:
+```console
+systemctl enable --now iwd
+iwctl
 ```
 
 ## What is **different from a regular install?**
 
-1. `pacman` calls are read-only by default, they vanish on the next boot.
-2. unless you use `__NAME__-update [pacman args]` default to `-Syu` and reboot after :)
+1. `/usr` is the image, read-only. A plain `pacman -S` still works, on a throwaway
+   `/usr` gone at the next boot (to try things).
+2. To keep packages: `__NAME__-update [pacman args]` (`caeoma-update`), default `-Syu`,
+   then reboot :) It stages a new image; each update builds on the newest staged one,
+   `__NAME__-update discard` starts over. `-S` without `-u` is refused (partial upgrade).
+3. `/etc`, `/var` and `/home` are yours and outlive updates. `/etc` shows the image's
+   defaults under your changes: edit, delete, `systemctl disable` as usual.
+4. The update builds from your config: `/etc/pacman.conf` (repos), and for the
+   kernel/initrd `/etc/kernel/cmdline` and `/etc/mkinitcpio.conf.d/*.conf`.
+   `__NAME__-update -Q` rebuilds them with no package change.
+5. Each version boots a UKI made for this machine, with a generic fallback used
+   on its own if that one fails (e.g. new hardware). Older versions stay in the
+   boot menu.
