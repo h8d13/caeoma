@@ -8,6 +8,12 @@
 # Build mirror, also written into the image's pacman mirrorlist.
 # Default: geo.mirror.pkgbuild.com.
 #Mirror=https://mirror.example.org/archlinux
+# Deterministic builds: the same packages every time, from a dated Arch
+# Linux Archive snapshot (archive.archlinux.org when Mirror= is unset;
+# `mkosi latest-snapshot` names the newest). Only the build is pinned:
+# the image's mirrorlist keeps Mirror= (or the default), so boxes update
+# from live repos. A Mirror= pointing into the archive would freeze them.
+#Snapshot=2026/10/01
 
 [Content]
 # Extra packages baked into the image. Example:
