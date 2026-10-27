@@ -4,3 +4,12 @@
 [submodule "docs/mkosi"]
 	path = docs/mkosi
 	url = https://github.com/systemd/mkosi
+[submodule "docs/transactional-update"]
+	path = docs/transactional-update
+	url = https://github.com/openSUSE/transactional-update
+[submodule "docs/kde-linux"]
+	path = docs/kde-linux
+	url = https://invent.kde.org/kde-linux/kde-linux
+[submodule "docs/etc-factory"]
+	path = docs/etc-factory
+	url = https://invent.kde.org/kde-linux/etc-factory
