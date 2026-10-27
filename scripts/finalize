@@ -11,15 +11,6 @@ set -e
 
 : "${IMAGE_ID:?}"
 
-# Replace $2 with $1 only if their content differs; $1 is consumed.
-replace_if_changed() {
-	if cmp --quiet "$1" "$2"; then
-		rm "$1"
-	else
-		mv "$1" "$2"
-	fi
-}
-
 # Image state rules (the state script): read once, before anything
 # changes, so a broken rule file stops the build here.
 rules="$("/usr/lib/$IMAGE_ID/state")"
@@ -55,31 +46,12 @@ if [ -d /etc/pam.d ]; then
 	rmdir /etc/pam.d
 fi
 
-# Apply presets, then bake the enablement into the vendor dir so a new
-# image can change it. Local changes: systemctl mask / drop-ins in /etc.
-# The baked "disable *" preset is masked from /etc while presets apply.
-for dir in system-preset user-preset; do
-	mkdir --parents "/etc/systemd/$dir"
-	ln --symbolic --force /dev/null \
-		"/etc/systemd/$dir/00-$IMAGE_ID-baked.preset"
-done
+# Apply presets: enablement links stay in /etc/systemd/{system,user} and
+# ship in factory /etc, the box's /etc lower. A new image's enablement
+# reaches the box; a local systemctl disable is a whiteout in the upper
+# and outlives updates. First boot's preset-all finds them in place.
 systemctl preset-all
 systemctl preset-all --global
-for scope in system user; do
-	[ -d "/etc/systemd/$scope" ] || continue
-	cp --archive --update=none "/etc/systemd/$scope/." \
-		"/usr/lib/systemd/$scope/"
-	rm --recursive --force "/etc/systemd/$scope"
-done
-for dir in system-preset user-preset; do
-	rm --recursive --force "/etc/systemd/$dir"
-	# First boot (no machine-id) would re-apply presets into /etc otherwise.
-	printf '%s\n' \
-		'# Enablement is baked into /usr/lib/systemd at build time.' \
-		'disable *' > "/usr/lib/systemd/$dir/00-$IMAGE_ID-baked.preset.new"
-	replace_if_changed "/usr/lib/systemd/$dir/00-$IMAGE_ID-baked.preset.new" \
-		"/usr/lib/systemd/$dir/00-$IMAGE_ID-baked.preset"
-done
 
 # Factory /etc (the box's /etc overlay lower) mirrors /etc minus machine
 # state (made at boot by sysusers, firstboot, ldconfig, resolved) and
