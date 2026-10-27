@@ -4,9 +4,10 @@
 build() {
 	add_binary /usr/lib/systemd/system-generators/__NAME__-usr-generator
 	# etc-dedup, run before the /etc overlay mounts, and what it uses that
-	# the initrd lacks (busybox here has neither find nor cmp).
-	add_binary /usr/lib/__NAME__/etc-dedup
+	# the initrd lacks (busybox here has neither find nor cmp). Its
+	# interpreter first: add_binary checks a script's is already there.
 	map add_binary bash getfattr find cmp
+	add_binary /usr/lib/__NAME__/etc-dedup
 
 	# Needed for /dev/gpt-auto-root to show up.
 	map add_udev_rule 90-image-dissect.rules 99-systemd.rules
