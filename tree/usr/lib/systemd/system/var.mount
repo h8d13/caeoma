@@ -1,0 +1,14 @@
+# /var is the @var subvolume of the root partition (install.repart): state
+# keeps one timeline across versions, apart from @system. A unit file, not
+# an initrd mount: only a mount with a fragment gets Requires= from
+# RequiresMountsFor=, which stops journal-flush (journald lets go of /var)
+# before the unmount. No nodev: container layers may carry device nodes.
+
+[Unit]
+Before=local-fs.target
+
+[Mount]
+What=/dev/gpt-auto-root
+Where=/var
+Type=btrfs
+Options=subvol=/@var,compress=zstd

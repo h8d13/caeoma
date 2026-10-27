@@ -9,7 +9,7 @@ flowchart TD
 	subgraph BUILD["mkosi build (host)"]
 		P["mkosi.postinst.chroot<br/>install-glue: tree/ + scripts/<br/>rendered for ImageId=<br/>mirrorlist, cmdline"]
 		PI["scripts/postinst<br/>os-release (IMAGE_VERSION)<br/>sd-boot to factory ESP<br/>build-uki: mkinitcpio + ukify"]
-		F["scripts/finalize<br/>vendor config into /usr<br/>bake presets, sync factory /etc<br/>gen ID-etc.conf, empty /boot<br/>state rules: carry into /usr/lib/sysimage, drop"]
+		F["scripts/finalize<br/>vendor config into /usr<br/>bake presets, sync factory /etc<br/>empty /boot<br/>state rules: carry into /usr/lib/sysimage, drop"]
 		R["mkosi.repart<br/>esp.raw + whole tree as erofs"]
 		PO["mkosi.postoutput + install.repart<br/>assemble disk.raw"]
 		P --> PI --> F --> R --> PO
@@ -19,8 +19,10 @@ flowchart TD
 		ESP["ESP vfat<br/>sd-boot<br/>ID_VER+3.efi ..."]
 		subgraph BTRFS["root btrfs"]
 			TOP["top level = /system<br/>ID_VER.erofs ..."]
-			SYS["@system = / (rw)<br/>/etc /var"]
+			SYS["@system = / (rw)<br/>skeleton, mountpoints"]
 			HOME["@home = /home (rw)"]
+			VAR["@var = /var (rw)"]
+			ETCU["@etc = /etc overlay upper (rw)"]
 		end
 	end
 
@@ -28,6 +30,8 @@ flowchart TD
 	PO --> TOP
 	PO --> SYS
 	PO --> HOME
+	PO --> VAR
+	PO --> ETCU
 
 	subgraph BOOT["Boot"]
 		SB["sd-boot picks UKI<br/>(boot counting +3)"]
@@ -35,22 +39,26 @@ flowchart TD
 		M1["mount top level at /sysroot/system"]
 		M2["mount VER.erofs subdir usr/<br/>at /sysusr/usr, bind to /sysroot/usr"]
 		ROOT["@system as / (gpt-auto, rootflags)"]
-		SB --> GEN --> M1 --> M2
+		M3["overlay at /sysroot/etc<br/>lower = factory/etc of VER<br/>upper = @etc/upper"]
+		SB --> GEN --> M1 --> M2 --> M3
 		GEN --> ROOT
 	end
 
 	ESP --> SB
 	TOP --> M1
 	SYS --> ROOT
+	ETCU --> M3
+	VAR --> RUN
 
 	subgraph RUN["Running system"]
-		ETC["tmpfiles: /etc L links<br/>to /usr/share/factory/etc"]
+		ETC["/etc: image defaults, local<br/>edits/deletes copied up and kept"]
+		VM["var.mount: @var at /var<br/>(unit file: journald released at shutdown)"]
 		PAC["ID-state-generator (carry rules)<br/>/usr/lib/sysimage/pacman/local bound on /var/lib/pacman/local"]
 		SX["systemd-sysext Mutable=ephemeral<br/>anchor ext in /run<br/>writable /usr, lost at reboot"]
 		SX --> PAC
 	end
 
-	M2 --> RUN
+	M3 --> RUN
 	ROOT --> RUN
 ```
 

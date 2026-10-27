@@ -1,6 +1,6 @@
 #!/bin/bash
 # The update over three boots: add tree (delta), remove it (delta,
-# whiteouts). Box-side pacman, /etc links and CA trust, delta size, COW,
+# whiteouts). Box-side pacman, CA trust from factory /etc, delta size, COW,
 # package DB integrity, cache cleanup.
 
 # shellcheck source=test-lib.sh
@@ -24,10 +24,7 @@ common() {
 	test_expect_success 'box pacman searches the repos' '
 		pacman -Ss "^tree\$" | grep "^extra/tree "
 	'
-	test_expect_success '/etc/ssl is a directory link into factory' '
-		test "$(readlink /etc/ssl)" = /usr/share/factory/etc/ssl
-	'
-	test_expect_success 'CA trust works through the linked /etc/ssl' '
+	test_expect_success 'CA trust works from factory /etc/ssl' '
 		curl --head --silent --show-error --fail --output /dev/null \
 			https://archlinux.org
 	'

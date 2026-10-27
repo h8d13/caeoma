@@ -2,7 +2,7 @@
 # Assemble the installed disk from mkosi's split partitions:
 #   ESP   block copy of the factory ESP (sd-boot + UKI)
 #   root  btrfs: <id>_<ver>.erofs (the /usr image) + @system (/, rw)
-#         + @home (/home, empty)
+#         + @home (/home), @var (/var), @etc (/etc overlay upper), empty
 # It replaces mkosi's own .raw, so `mkosi vm` boots the real layout.
 
 set -ex
@@ -13,7 +13,8 @@ stage="$OUTPUTDIR/$name.stage"
 ls -la "$OUTPUTDIR"
 
 rm --recursive --force "$stage"
-mkdir --parents "$stage/root/@system" "$stage/root/@home"
+mkdir --parents "$stage/root/@system" "$stage/root/@home" "$stage/root/@var" \
+	"$stage/root/@etc/upper" "$stage/root/@etc/work"
 
 mv "$OUTPUTDIR/$name.esp.raw" "$stage/esp.raw"
 mv "$OUTPUTDIR/$name.root-$ARCHITECTURE.raw" "$OUTPUTDIR/$name.erofs"
@@ -22,7 +23,7 @@ cp --reflink=auto "$OUTPUTDIR/$name.erofs" "$stage/root/$name.erofs"
 chmod 0444 "$stage/root/$name.erofs"
 
 # Mountpoints and merged-usr links; /usr itself only arrives at boot.
-# /etc stays empty: tmpfiles fills it from /usr/share/factory/etc.
+# /etc stays empty: the overlay of factory/etc and @etc mounts on it.
 cd "$stage/root/@system"
 mkdir boot dev etc home mnt opt proc run srv sys usr var
 mkdir --mode 0700 root

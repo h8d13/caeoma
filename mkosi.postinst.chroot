@@ -20,7 +20,7 @@ print(" ".join(v) if isinstance(v, list) else (v or ""))' "$1"
 }
 
 # pacman-mirrorlist ships every server commented out. Mirror= (else Arch's
-# geo mirror); override locally by replacing the /etc symlink with a file.
+# geo mirror); override locally by editing /etc/pacman.d/mirrorlist.
 mirror="$(mkosi_setting Mirror)"
 mirror="${mirror:-https://geo.mirror.pkgbuild.com}"
 echo "Server = $mirror/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist
