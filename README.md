@@ -13,7 +13,8 @@ This repo holds simplified versions of references:
 - https://github.com/systemd/particleos
 
 Many other projects have similar ideas: SteamOS, Aeon/MicroOS, GnomeOS, NixOS
-Plus all the Fedora `ostree` and `btrfs` defaults.
+
+Plus, all the Fedora `ostree` and `btrfs` defaults.
 
 And concretly only uses:
 
