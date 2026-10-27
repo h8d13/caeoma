@@ -20,6 +20,16 @@ hard-coded rule should allow to be extended, modified or removed. The
 vendor rules in `/usr/lib/__NAME__/state.d` are only defaults: a local
 file of the same name replaces one.
 
+The update builds the next image from the box's own config: its
+`/etc/pacman.conf` (repos, mirrors) for pacman, and for the UKI the `/etc`
+the box will boot with (the image's, under the box's changes):
+`/etc/kernel/cmdline` (appended to the kernel command line),
+`/etc/mkinitcpio.conf.d/*.conf` (appended to the image's initrd config;
+`/etc/mkinitcpio.conf` itself is not used), and any file they name.
+`/etc/__NAME__/squash-growth`: percent the image may grow through deltas
+before a full one is built (default 50). Rebuild the UKI alone, no package
+change: `__NAME__-update -Q`.
+
 
 ## No backwards-compat
 
