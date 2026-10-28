@@ -79,20 +79,23 @@ rm --force "$mirrorlist.pacnew"
 	done
 
 # Factory /etc (the box's /etc overlay lower) mirrors /etc minus machine
-# state (made at boot by sysusers, firstboot, ldconfig, resolved) and
-# resolv.conf (a bind mount in builds).
+# state (machine rules).
 # Synced rather than rebuilt: unchanged entries are never rewritten.
 factory=/usr/share/factory/etc
 
+machine=()
+while read -r verb path; do
+	[ "$verb" != machine ] || machine+=("${path#/etc/}")
+done <<< "$rules"
+
+# True when /etc/$1 is, or is below, a machine rule's match.
 is_machine_state() {
-	case "$1" in
-	.pwd.lock|passwd|passwd-|shadow|shadow-|group|group-|gshadow|gshadow-) ;;
-	machine-id|hostname|localtime|locale.conf|vconsole.conf|crypttab) ;;
-	resolv.conf|ld.so.cache|pam.d|pam.d/*|pacman.d/gnupg|pacman.d/gnupg/*) ;;
-	# The box's own config (local state.d, glue URL).
-	"$IMAGE_ID"|"$IMAGE_ID"/*) ;;
-	*) return 1 ;;
-	esac
+	local p
+	for p in "${machine[@]}"; do
+		# shellcheck disable=SC2053 # $p is a glob
+		[[ "$1" != $p && "$1" != $p/* ]] || return 0
+	done
+	return 1
 }
 
 mkdir --parents "$factory"

@@ -6,6 +6,9 @@
 #   carry /var/lib/<x>   state that describes the image (e.g. a package DB):
 #                        shipped as /usr/lib/sysimage/<x>, bound back
 #   drop  <glob>         never in the image; re-applied on every update
+#   machine /etc/<glob>  machine state (made on the box: accounts, keys,
+#                        secrets): never in factory /etc nor a commit,
+#                        stays in the box's /etc upper; with all below it
 #
 # Prior art: rpm-ostree / Fedora keep the RPM DB in /usr/lib/sysimage,
 # NixOS impermanence generates bind mounts from path lists, SteamOS reads
@@ -46,6 +49,12 @@ printf '%s\n' "${!files[@]}" | sort | while IFS= read -r name; do
 				esac
 				;;
 			drop) ;;
+			machine)
+				case "$path" in
+				/etc/?*) ;;
+				*) echo "$where: machine is for /etc/<x>" >&2; exit 1 ;;
+				esac
+				;;
 			*) echo "$where: unknown verb" >&2; exit 1 ;;
 			esac
 			echo "$verb $path"
