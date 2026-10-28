@@ -106,8 +106,6 @@ start() {
 		args=("${test_mkosi[@]}")
 		shift
 	fi
-	# The rest goes to mkosi, e.g. --credential=...
-	args+=("$@")
 	if is_alive vm; then
 		echo "vm-serial: already running (stop it first)" >&2
 		exit 1
@@ -119,11 +117,14 @@ start() {
 	# Holds the FIFO open between commands, or the console sees EOF.
 	sleep infinity > "$dir/in" &
 	echo $! > "$dir/holder.pid"
+	# The rest goes to mkosi, last so it wins (e.g. --ephemeral=no to keep
+	# the disk across runs, --credential=...).
 	setsid mkosi "${args[@]}" \
 		--machine="$(id --user --name)-vm-serial" \
 		--ram=4G --cpus=4 \
 		--console=native \
 		--ephemeral=yes \
+		"$@" \
 		vm < "$dir/in" > "$dir/out" 2>&1 &
 	echo $! > "$dir/vm.pid"
 	login 0
