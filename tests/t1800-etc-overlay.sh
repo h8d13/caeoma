@@ -26,7 +26,7 @@ if test_stage 1; then
 		echo local-new > "/etc/$IMAGE_ID-test.conf"
 	'
 	test_expect_success 'stage an update with nano' '
-		"$IMAGE_ID-update" --noconfirm -Syu nano \
+		"$IMAGE_ID" update --noconfirm -Syu nano \
 			> "$TEST_STATE/update.log" 2>&1 ||
 			{ cat "$TEST_STATE/update.log"; false; }
 	'

@@ -37,7 +37,7 @@ if test_stage 1; then
 	common
 	test_expect_success 'tree is not installed' '! pacman -Q tree'
 	test_expect_success 'update stages tree' '
-		"$IMAGE_ID-update" --noconfirm -Syu tree &&
+		"$IMAGE_ID" update --noconfirm -Syu tree &&
 		pacman --query --quiet | wc -l > "$TEST_STATE/packages"
 	'
 	test_expect_success 'package cache emptied after staging' '
@@ -61,7 +61,7 @@ if test_stage 2; then
 		test "$(exclusive_bytes)" -lt 2097152
 	'
 	test_expect_success 'update removes tree' '
-		"$IMAGE_ID-update" --noconfirm -R tree > "$TEST_STATE/update2.log"
+		"$IMAGE_ID" update --noconfirm -R tree > "$TEST_STATE/update2.log"
 	'
 	test_expect_success 'unchanged initrd inputs: cached initrd reused' '
 		grep "^Reusing cached initrd" "$TEST_STATE/update2.log" ||

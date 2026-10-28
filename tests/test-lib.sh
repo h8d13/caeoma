@@ -61,13 +61,13 @@ test_expect_success() {
 	test_save
 }
 
-# test_update <name> [args]: stage an update, its log into
+# test_update <name> <update|commit> [args]: stage a version, its log into
 # $TEST_STATE/<name>.log (shown on failure), the staged version into
 # $TEST_STATE/<name>.
 test_update() {
 	local name="$1"
 	shift
-	"$IMAGE_ID-update" "$@" > "$TEST_STATE/$name.log" 2>&1 ||
+	"$IMAGE_ID" update "$@" > "$TEST_STATE/$name.log" 2>&1 ||
 		{ cat "$TEST_STATE/$name.log"; return 1; }
 	sed -n "s/^Staged $IMAGE_ID \([0-9]*\);.*/\1/p" \
 		"$TEST_STATE/$name.log" > "$TEST_STATE/$name"

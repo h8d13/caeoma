@@ -8,9 +8,11 @@
 # Identical (type, mode, owner, content or link target) to the new lower,
 # or to the previous version's lower (the last vendor copy: etc-factory
 # keeps hashes for this, the previous image is that record here), means
-# not local. Kept: whiteouts (local deletions), anything below an opaque
-# dir (its lower content is hidden on purpose), real edits. An edit whose
-# vendor default changed between the two versions is reported.
+# not local. A whiteout (local deletion) of what the new lower lacks too
+# (a commit took the deletion in) is dropped alike. Kept: other whiteouts,
+# anything below an opaque dir (its lower content is hidden on purpose),
+# real edits. An edit whose vendor default changed between the two
+# versions is reported.
 # Opt out: /etc/<id>/no-etc-dedup.
 # Usage: etc-dedup <sysroot> <image-id> <version>
 
@@ -72,10 +74,19 @@ dedup() {
 		trap 'umount "$old_mnt"' EXIT
 		old="$old_mnt/usr/share/factory/etc"
 	fi
-	(cd "$upper" && find . \( -type f -o -type l \)) | while read -r rel; do
+	(cd "$upper" && find . \( -type f -o -type l -o -type c \)) | while read -r rel; do
 		rel="${rel#./}"
 		entry="$upper/$rel"
 		below_opaque "$entry" && continue
+		if [ -c "$entry" ]; then
+			if [ "$(stat -c %t:%T "$entry")" = 0:0 ] \
+				&& [ ! -e "$new/$rel" ] && [ ! -L "$new/$rel" ]; then
+				echo "etc-dedup: /etc/$rel deleted in the image too," \
+					"whiteout dropped"
+				rm "$entry"
+			fi
+			continue
+		fi
 		if same "$entry" "$new/$rel" \
 			|| { [ -n "$old" ] && same "$entry" "$old/$rel"; }; then
 			echo "etc-dedup: /etc/$rel identical to the image, dropped"

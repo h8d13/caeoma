@@ -29,7 +29,7 @@ if test_stage 1; then
 			"$upper/skel")" = y
 	'
 	test_expect_success 'stage an update with nano' '
-		test_update update --noconfirm -Syu nano
+		test_update update update --noconfirm -Syu nano
 	'
 	echo "$IMAGE_VERSION" > "$TEST_STATE/v0"
 	test_reboot

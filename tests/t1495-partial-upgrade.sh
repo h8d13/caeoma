@@ -15,7 +15,7 @@ list() {
 # The update with args $@ is refused before staging anything.
 refused() {
 	list > "$images" &&
-	! "$IMAGE_ID-update" --noconfirm "$@" > "$TEST_STATE/log" 2>&1 &&
+	! "$IMAGE_ID" update --noconfirm "$@" > "$TEST_STATE/log" 2>&1 &&
 	grep "partial upgrade" "$TEST_STATE/log" &&
 	list | diff "$images" -
 }
@@ -25,7 +25,7 @@ test_expect_success '-Sy refused' 'refused -Sy nano'
 test_expect_success '--sync --refresh refused' 'refused --sync --refresh nano'
 test_expect_success '-Ss passes' '
 	pacman -Sy &&
-	"$IMAGE_ID-update" --noconfirm -Ss "^nano\$" > "$TEST_STATE/query.log" 2>&1 ||
+	"$IMAGE_ID" update --noconfirm -Ss "^nano\$" > "$TEST_STATE/query.log" 2>&1 ||
 		{ cat "$TEST_STATE/query.log"; false; }
 '
 test_expect_success 'no failed units' '

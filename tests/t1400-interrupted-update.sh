@@ -20,7 +20,7 @@ if test_stage 1; then
 	echo partial > "$esp/${IMAGE_ID}_$orphan+3.efi.tmp"
 	test_info ls -l /system "$esp"
 
-	"$IMAGE_ID-update" --noconfirm -Q > "$TEST_STATE/first.log" 2>&1 &
+	"$IMAGE_ID" update --noconfirm -Q > "$TEST_STATE/first.log" 2>&1 &
 	first=$!
 	# Holding the lock once its work dir exists.
 	for _ in $(seq 100); do
@@ -28,8 +28,8 @@ if test_stage 1; then
 		sleep 0.1
 	done
 	test_expect_success 'second update while one runs is refused' '
-		! "$IMAGE_ID-update" --noconfirm -Q > "$TEST_STATE/second.log" 2>&1 &&
-		grep "^Another $IMAGE_ID-update is running" "$TEST_STATE/second.log"
+		! "$IMAGE_ID" update --noconfirm -Q > "$TEST_STATE/second.log" 2>&1 &&
+		grep "^Another $IMAGE_ID run is going on" "$TEST_STATE/second.log"
 	'
 	wait "$first"
 	echo "$?" > "$TEST_STATE/first.status"

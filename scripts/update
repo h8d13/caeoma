@@ -1,19 +1,26 @@
 #!/bin/bash
-# <id>-update: derive the next image from the newest one and stage it.
+# <id>: derive the next image from the newest one and stage it.
 #
-#   <id>-update [--squash] [pacman args]
+#   <id> update [--squash] [pacman args]
 #                                 default -Syu; e.g. -Syu foo bar;
 #                                 -Q: no package change (new initrd/UKI)
 #                                 --squash: full image instead of a delta
-#   <id>-update discard           delete staged versions never booted
-#   <id>-update glue [url]        fetch a repo tarball (.tar.gz); its
+#   <id> commit [--squash]        the box's changes into a new version:
+#                                 its /usr writes and /etc edits (minus
+#                                 machine state); no package change
+#   <id> discard                  delete staged versions never booted
+#   <id> rollback                 back to the previous version at the
+#                                 next boot; the running one is pruned
+#   <id> glue [url]               fetch a repo tarball (.tar.gz); its
 #                                 scripts/ and tree/ go into every
 #                                 following image. URL kept in /etc/<id>.
 #
 # The base is the newest staged version that can still boot, else the
 # running one: updates staged before a reboot add up instead of the last
 # one silently replacing the others. -S without -u is refused (a partial
-# upgrade). A full image is built once deltas grew the base too much.
+# upgrade). commit has no pacman run: the box's writes on the running
+# version are the delta, so that version is the base. A full image is
+# built once deltas grew the base too much.
 # The base erofs (whole tree) is the lower layer of an overlay; pacman
 # runs in it like arch-chroot does (host /proc /sys /dev /run, so hooks see
 # real hardware); finalize re-freezes the tree. The next erofs is a reflink
@@ -38,7 +45,7 @@ work="/system/.$IMAGE_ID-update"
 keep=3
 
 usage() {
-	sed -n "2,12{s/^# \{0,1\}//;s/<id>/$IMAGE_ID/g;p}" "$0"
+	sed -n "2,17{s/^# \{0,1\}//;s/<id>/$IMAGE_ID/g;p}" "$0"
 }
 
 fetch_glue() {
@@ -193,6 +200,43 @@ expand_opaque() {
 		done
 }
 
+# The rest of overlayfs' bookkeeping (origin, impure, uuid) means nothing
+# inside an image: whiteouts are the only change left to carry.
+strip_overlay_xattrs() {
+	local line file=""
+	getfattr --absolute-names --recursive --physical --no-dereference --dump \
+		--match='^trusted\.overlay\.' "$work/upper" \
+		| while IFS= read -r line; do
+			case "$line" in
+			"# file: "*) file="${line#"# file: "}" ;;
+			trusted.overlay.*=*)
+				setfattr --remove="${line%%=*}" "$file" ;;
+			esac
+		done
+}
+
+# commit: the box's changes as the upper, copied before the overlay mounts
+# (an upper changed under a mounted overlay is undefined). The running
+# version's /usr upper (sysext), the /etc upper minus machine state: that
+# stays the box's, never inside an image (the erofs files are readable by
+# all). Through /system: one mount, so reflinked.
+take_box_changes() {
+	local usr="/system/@var/lib/$IMAGE_ID/usr/$IMAGE_VERSION"
+	local verb path entry
+	if [ -d "$usr" ]; then
+		cp --archive --reflink=auto "$usr" "$work/upper/usr"
+	fi
+	cp --archive --reflink=auto /system/@etc/upper "$work/upper/etc"
+	shopt -s dotglob nullglob
+	while read -r verb path; do
+		[ "$verb" = machine ] || continue
+		for entry in "$work/upper"$path; do
+			rm --recursive --force "$entry"
+		done
+	done <<< "$("/usr/lib/$IMAGE_ID/state")"
+	shopt -u dotglob nullglob
+}
+
 # Image by rename (same filesystem: no copy, extents stay shared), UKI via
 # a temporary name so the ESP never holds a partial entry. +3: boot-counting
 # tries, systemd-bless-boot drops the counter once the boot is good.
@@ -255,6 +299,32 @@ discard() {
 		echo "Discarding staged $IMAGE_ID $v"
 		remove_version "$v"
 	done
+}
+
+# Back to the newest bootable version below the running one, as boot
+# counting would after failed tries: every UKI of the running version
+# (main and fallback) spent, so sd-boot passes it and prune deletes it.
+# Staged versions go first, they build on the version left behind.
+rollback() {
+	local v prev f entry
+	prev="$(versions | while IFS= read -r v; do
+		if [ "$v" -lt "$IMAGE_VERSION" ] && has_uki "$v" \
+			&& ! is_spent "$v"; then
+			echo "$v"
+		fi
+	done | tail --lines=1)"
+	if [ -z "$prev" ]; then
+		echo "No bootable $IMAGE_ID version below $IMAGE_VERSION" >&2
+		exit 1
+	fi
+	discard
+	for f in "/boot/EFI/Linux/${IMAGE_ID}_$IMAGE_VERSION"{,-fallback}{,+*}.efi; do
+		[ -e "$f" ] || continue
+		entry="${f%.efi}"
+		entry="${entry%+*}"
+		[ "$f" = "$entry+0-3.efi" ] || mv "$f" "$entry+0-3.efi"
+	done
+	echo "Spent $IMAGE_ID $IMAGE_VERSION; reboot into $prev."
 }
 
 # Image (immutable: tmpfiles, install_next; lifted only to delete), UKI
@@ -320,7 +390,7 @@ is_partial_sync() {
 lock() {
 	exec {lock_fd}> "/run/$IMAGE_ID-update.lock"
 	if ! flock --nonblock "$lock_fd"; then
-		echo "Another $IMAGE_ID-update is running" >&2
+		echo "Another $IMAGE_ID run is going on" >&2
 		exit 1
 	fi
 }
@@ -337,9 +407,26 @@ discard)
 	discard
 	exit 0
 	;;
+rollback)
+	lock
+	rollback
+	exit 0
+	;;
 -h|--help)
 	usage
 	exit 0
+	;;
+update)
+	commit=false
+	shift
+	;;
+commit)
+	commit=true
+	shift
+	;;
+*)
+	usage >&2
+	exit 2
 	;;
 esac
 squash=false
@@ -348,6 +435,10 @@ if [ "${1:-}" = --squash ]; then
 	shift
 fi
 
+if [ "$commit" = true ] && [ "$#" -gt 0 ]; then
+	usage >&2
+	exit 2
+fi
 if [ "$#" -eq 0 ]; then
 	set -- -Syu
 fi
@@ -360,10 +451,16 @@ lock
 
 base="$IMAGE_VERSION"
 staged="$(newest_staged)"
+if [ "$commit" = true ] && [ -n "$staged" ]; then
+	echo "commit builds on the running $IMAGE_ID $IMAGE_VERSION, which" \
+		"would leave staged $staged behind: boot it first, or" \
+		"$IMAGE_ID discard" >&2
+	exit 1
+fi
 if [ -n "$staged" ]; then
 	base="$staged"
 	echo "Building on staged $IMAGE_ID $base (not booted yet;" \
-		"$IMAGE_ID-update discard starts over)"
+		"$IMAGE_ID discard starts over)"
 fi
 version="$(date --utc +%Y%m%d%H%M%S)"
 if [ "$version" -le "$base" ]; then
@@ -397,6 +494,9 @@ mount -o ro "$current" "$work/lower"
 # image's, not mkdir's.
 chmod --reference="$work/lower" "$work/upper"
 chown --reference="$work/lower" "$work/upper"
+if [ "$commit" = true ]; then
+	take_box_changes
+fi
 mount -t overlay overlay \
 	-o "lowerdir=$work/lower,upperdir=$work/upper,workdir=$work/work" \
 	-o metacopy=off,redirect_dir=off \
@@ -441,9 +541,11 @@ mount_local_config
 # in the tree, the package DB is the tree's (default DBPath under root).
 # Hook dirs (else only the box's, from its pacman.conf): the tree's /etc
 # ones as this update's glue rendered them, then the box's, which win.
-pacman --root "$work/mnt" --hookdir "$work/mnt/etc/pacman.d/hooks" \
-	--hookdir /etc/pacman.d/hooks "$@"
-phase pacman
+if [ "$commit" = false ]; then
+	pacman --root "$work/mnt" --hookdir "$work/mnt/etc/pacman.d/hooks" \
+		--hookdir /etc/pacman.d/hooks "$@"
+	phase pacman
+fi
 
 # The box's initrd cache for build-uki, which asks pacman what its initrd
 # is made of: pacman's binds stay until then, as during the transaction.
@@ -486,6 +588,7 @@ if [ "$squash" = true ]; then
 else
 	umount "$work/mnt"
 	expand_opaque
+	strip_overlay_xattrs
 	cp --reflink=always "$current" "$next.erofs"
 	if ! mkfs.erofs --quiet -zzstd --incremental=data --ovlfs-strip=1 \
 		"$next.erofs" "$work/upper"; then
@@ -515,4 +618,19 @@ find /var/cache/pacman/pkg -mindepth 1 -delete
 phase install
 
 echo "Staged $IMAGE_ID $version; reboot to switch."
+# The box's /usr writes stay with the version they were made on. Taken by
+# a commit, they leave it: the overlay keeps writing to the renamed upper
+# (it holds the dir, not the path), the next boot deletes it, so a
+# rollback finds the running version clean.
+if [ "$commit" = true ]; then
+	if [ -d "$state/usr/$IMAGE_VERSION" ]; then
+		mv "$state/usr/$IMAGE_VERSION" \
+			"$state/usr/$IMAGE_VERSION.committed"
+	fi
+	echo "Further /usr writes before the reboot are dropped."
+elif [ -d "$state/usr/$IMAGE_VERSION" ] \
+	&& [ -n "$(ls -A "$state/usr/$IMAGE_VERSION")" ]; then
+	echo "/usr writes on $IMAGE_ID $IMAGE_VERSION are not in $version:" \
+		"$IMAGE_ID commit takes them."
+fi
 echo "Timings:$timings"

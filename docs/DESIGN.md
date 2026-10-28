@@ -41,7 +41,7 @@ flowchart TD
 		M1["mount top level at /sysroot/system"]
 		M2["mount VER.erofs subdir usr/<br/>at /sysusr/usr, bind to /sysroot/usr"]
 		ROOT["@system as / (gpt-auto, rootflags)"]
-		DD["ID-etc-dedup (first boot of VER)<br/>drop upper entries the image<br/>ships alike (old or new lower)"]
+		DD["ID-etc-dedup (first boot of VER)<br/>drop upper entries the image<br/>ships alike (old or new lower),<br/>whiteouts of what it lacks too"]
 		M3["overlay at /sysroot/etc<br/>lower = factory/etc of VER<br/>upper = @etc/upper"]
 		SB --> GEN --> M1 --> M2 --> DD --> M3
 		GEN --> ROOT
@@ -65,13 +65,13 @@ flowchart TD
 	ROOT --> RUN
 ```
 
-## Update (ID-update)
+## Update (ID update, commit)
 
 ```mermaid
 flowchart TD
-	START["ID-update [--squash] [pacman args]<br/>-S without -u refused (partial upgrade)<br/>(ID-update discard: delete staged versions)"] --> BASE["base = newest staged version that can boot,<br/>else the running one"]
+	START["ID update [--squash] [pacman args]<br/>-S without -u refused (partial upgrade)<br/>ID commit [--squash]: no pacman<br/>(ID discard: delete staged versions)<br/>(ID rollback: spend the running UKIs)"] --> BASE["base = newest staged version that can boot,<br/>else the running one (commit: always,<br/>refused with a staged one)"]
 	BASE --> V["version = UTC now<br/>must be newer than base"]
-	V --> OV["overlay at /system/.ID-update<br/>lower = base VER.erofs (ro)<br/>upper = empty, metacopy=off"]
+	V --> OV["overlay at /system/.ID-update<br/>lower = base VER.erofs (ro)<br/>upper = empty; commit: the box's /usr upper<br/>+ @etc upper minus machine rules<br/>metacopy=off, redirect_dir=off"]
 	OV --> G{"glue in /var/lib/ID?"}
 	G -- yes --> GC["install-glue: render tree/ + scripts/<br/>write changes, drop removals"]
 	G -- no --> MB
@@ -80,12 +80,12 @@ flowchart TD
 	PM --> CH["chroot: postinst, /etc = the box's (ro snapshot of<br/>@etc upper on the tree's): os-release, UKIs<br/>(host-only + fallback; kernel/cmdline,<br/>mkinitcpio.conf.d, microcode)<br/>chroot: finalize (re-freeze, idempotent, mirrorlist,<br/>names new .pacnew) with the box's state.d rules"]
 	CH --> SQ{"--squash, or base grew past<br/>the last full image by squash-growth%?"}
 	SQ -- yes --> FULL["mkfs.erofs full image<br/>from merged view"]
-	SQ -- no --> EO["expand_opaque<br/>opaque dirs to whiteouts"]
+	SQ -- no --> EO["expand_opaque<br/>opaque dirs to whiteouts<br/>other overlay xattrs stripped"]
 	EO --> RL["cp --reflink=always current to next"]
 	RL --> INC["mkfs.erofs --incremental=data<br/>--ovlfs-strip=1 append upper"]
 	FULL --> INST
 	INC --> INST["install_next<br/>rename erofs into /system<br/>UKIs to ESP: VER-fallback+3.efi, then VER+3.efi"]
 	INST --> PR["prune: keep newest 3 + running"]
 	PR --> CL["empty pkg cache, cleanup mounts"]
-	CL --> RB["reboot: sd-boot picks new UKI<br/>bless-boot drops +N on success"]
+	CL --> RB["reboot: sd-boot picks new UKI<br/>bless-boot drops +N on success<br/>(commit: the box's /usr upper renamed<br/>VER.committed, deleted at boot)"]
 ```

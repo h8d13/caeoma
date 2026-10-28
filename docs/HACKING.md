@@ -28,7 +28,7 @@ the box will boot with (the image's, under the box's changes):
 `/etc/mkinitcpio.conf` itself is not used), and any file they name.
 `/etc/__NAME__/squash-growth`: percent the image may grow through deltas
 before a full one is built (default 50). Rebuild the UKI alone, no package
-change: `__NAME__-update -Q`.
+change: `__NAME__ update -Q`.
 
 First boot never prompts (`systemd.firstboot=headless`): it applies the
 image's credentials, which mkosi writes to `/usr/lib/credstore/` from

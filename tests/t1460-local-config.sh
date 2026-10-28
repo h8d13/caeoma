@@ -32,7 +32,7 @@ if test_stage 1; then
 		pacman -Sy
 	'
 	test_expect_success 'update with a [multilib] package and microcode' '
-		"$IMAGE_ID-update" --noconfirm -Syu lib32-acl amd-ucode \
+		"$IMAGE_ID" update --noconfirm -Syu lib32-acl amd-ucode \
 			> "$TEST_STATE/update.log" 2>&1 ||
 			{ cat "$TEST_STATE/update.log"; false; }
 	'
@@ -50,7 +50,7 @@ if test_stage 1; then
 	test_expect_success 'a drop-in losing systemd is refused, nothing staged' '
 		images > "$TEST_STATE/before" &&
 		echo "HOOKS=(base udev)" > /etc/mkinitcpio.conf.d/90-bad.conf &&
-		! "$IMAGE_ID-update" --noconfirm -Q > "$TEST_STATE/bad.log" 2>&1 &&
+		! "$IMAGE_ID" update --noconfirm -Q > "$TEST_STATE/bad.log" 2>&1 &&
 		grep "^HOOKS must keep systemd and $IMAGE_ID" "$TEST_STATE/bad.log" &&
 		images | diff "$TEST_STATE/before" - &&
 		rm /etc/mkinitcpio.conf.d/90-bad.conf

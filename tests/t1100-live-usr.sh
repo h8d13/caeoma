@@ -57,7 +57,7 @@ if test_stage 2; then
 		test "$(cat /opt/persist-test)" = persist
 	'
 	test_expect_success 'stage a version without package change' '
-		test_update next --noconfirm -Q
+		test_update next update --noconfirm -Q
 	'
 	test_reboot
 fi

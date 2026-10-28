@@ -17,9 +17,9 @@ packages_of() {
 }
 
 if test_stage 1; then
-	test_expect_success 'stage tree' 'test_update first --noconfirm -Syu tree'
+	test_expect_success 'stage tree' 'test_update first update --noconfirm -Syu tree'
 	test_expect_success 'stage nano before rebooting' '
-		test_update second --noconfirm -Syu nano &&
+		test_update second update --noconfirm -Syu nano &&
 		grep "^Building on staged $IMAGE_ID $(cat "$TEST_STATE/first")" \
 			"$TEST_STATE/second.log"
 	'
@@ -38,17 +38,17 @@ if test_stage 2; then
 	'
 	test_expect_success 'both packages installed' 'pacman -Q tree nano'
 	test_expect_success 'stage the removal of nano' '
-		test_update third --noconfirm -R nano
+		test_update third update --noconfirm -R nano
 	'
 	test_expect_success 'discard deletes the staged removal' '
-		"$IMAGE_ID-update" discard > "$TEST_STATE/discard.log" 2>&1 &&
+		"$IMAGE_ID" discard > "$TEST_STATE/discard.log" 2>&1 &&
 		grep "^Discarding staged $IMAGE_ID $(cat "$TEST_STATE/third")" \
 			"$TEST_STATE/discard.log" &&
 		test ! -e "/system/${IMAGE_ID}_$(cat "$TEST_STATE/third").erofs" &&
 		! ls "/boot/EFI/Linux/${IMAGE_ID}_$(cat "$TEST_STATE/third")"*
 	'
 	test_expect_success 'next update builds on the running version' '
-		test_update fourth --noconfirm -Q &&
+		test_update fourth update --noconfirm -Q &&
 		! grep "^Building on staged" "$TEST_STATE/fourth.log" &&
 		packages_of fourth | grep "^nano-"
 	'

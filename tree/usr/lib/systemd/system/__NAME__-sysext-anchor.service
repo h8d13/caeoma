@@ -11,7 +11,7 @@ Before=systemd-sysext.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=systemd-tmpfiles --create __NAME__-sysext.conf
+ExecStart=systemd-tmpfiles --create --remove __NAME__-sysext.conf
 
 [Install]
 WantedBy=systemd-sysext.service

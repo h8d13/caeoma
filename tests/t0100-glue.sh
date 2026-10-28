@@ -58,7 +58,7 @@ test_expect_success 'install-glue updates changes, drops removals' '
 test_expect_success 'repo glue for another id has no default id left' '
 	default="$(sed -n "s/^ImageId=//p" "$repo/mkosi.conf")" &&
 	"$repo/scripts/install-glue" "$repo" repo-root &&
-	test -x repo-root/usr/bin/foo-update &&
+	test -x repo-root/usr/bin/foo &&
 	test -x repo-root/usr/lib/foo/update &&
 	! grep --recursive --ignore-case --files-with-matches \
 		-e __NAME__ -e "$default" repo-root &&

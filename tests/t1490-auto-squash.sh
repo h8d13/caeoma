@@ -27,13 +27,13 @@ if test_stage 1; then
 		echo 0 > "/etc/$IMAGE_ID/squash-growth"
 	'
 	test_expect_success 'first update: a delta carrying the full size' '
-		test_update first --noconfirm -Q &&
+		test_update first update --noconfirm -Q &&
 		! grep "building a full image" "$TEST_STATE/first.log" &&
 		test "$(reference_of "$(image_of first)")" = \
 			"$(stat -c %s "/system/${IMAGE_ID}_$IMAGE_VERSION.erofs")"
 	'
 	test_expect_success 'second update: the delta grew it, full image' '
-		test_update second --noconfirm -Q &&
+		test_update second update --noconfirm -Q &&
 		grep "^Image grew from" "$TEST_STATE/second.log"
 	'
 	test_expect_success 'the full image carries no reference' '
@@ -47,7 +47,7 @@ if test_stage 2; then
 		test "$IMAGE_VERSION" = "$(cat "$TEST_STATE/second")"
 	'
 	test_expect_success 'next update: a delta carrying its size' '
-		test_update third --noconfirm -Q &&
+		test_update third update --noconfirm -Q &&
 		! grep "building a full image" "$TEST_STATE/third.log" &&
 		test "$(reference_of "$(image_of third)")" = \
 			"$(stat -c %s "$(image_of second)")"

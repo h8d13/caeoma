@@ -1,6 +1,6 @@
 # Per-machine knobs. Copy to mkosi.local.conf (gitignored) and adjust.
 # mkosi layers it over mkosi.conf; list settings (Packages=, ...) append.
-# Then build: mkosi -B -f build. Installed boxes update with <ImageId>-update.
+# Then build: mkosi -B -f build. Installed boxes update with `<ImageId> update`.
 
 [Distribution]
 # Build mirror, also written into the image's pacman mirrorlist.

@@ -43,7 +43,7 @@ exclusive_bytes() {
 timed_update() {
 	local start
 	start="$(date +%s.%N)"
-	"$IMAGE_ID-update" --noconfirm -Q > "$TEST_STATE/$1.log" 2>&1 ||
+	"$IMAGE_ID" update --noconfirm -Q > "$TEST_STATE/$1.log" 2>&1 ||
 		{ cat "$TEST_STATE/$1.log"; return 1; }
 	awk -v s="$start" -v e="$(date +%s.%N)" 'BEGIN { printf "%.1f\n", e - s }' \
 		> "$TEST_STATE/$1.seconds"

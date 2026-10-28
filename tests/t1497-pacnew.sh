@@ -29,7 +29,7 @@ test_expect_success 'a hook leaving .pacnew files in the tree' '
 	HOOK
 '
 test_expect_success 'update with a transaction' '
-	test_update update --noconfirm -Syu tree
+	test_update update update --noconfirm -Syu tree
 '
 test_expect_success 'the other .pacnew is named' '
 	grep "^/etc/test-only.pacnew: merge it" "$TEST_STATE/update.log" &&
@@ -49,7 +49,7 @@ test_expect_success 'the other .pacnew shipped as is' '
 '
 umount "$mnt"
 test_expect_success 'named once: not again by the next update' '
-	test_update again --noconfirm -Q &&
+	test_update again update --noconfirm -Q &&
 	! grep "test-only.pacnew" "$TEST_STATE/again.log"
 '
 test_expect_success 'no failed units' '

@@ -25,7 +25,7 @@ default_entry() {
 
 if test_stage 1; then
 	test_expect_success 'update installs both UKIs' '
-		test_update staged --noconfirm -Q &&
+		test_update staged update --noconfirm -Q &&
 		test -f "$esp/${IMAGE_ID}_$(v staged)+3.efi" &&
 		test -f "$esp/${IMAGE_ID}_$(v staged)-fallback+3.efi"
 	'
@@ -59,8 +59,8 @@ if test_stage 2; then
 		test -f "$esp/${IMAGE_ID}_$(v staged)+0-3.efi"
 	'
 	test_expect_success 'discard removes both UKIs of a version' '
-		test_update next --noconfirm -Q &&
-		"$IMAGE_ID-update" discard > "$TEST_STATE/discard.log" 2>&1 &&
+		test_update next update --noconfirm -Q &&
+		"$IMAGE_ID" discard > "$TEST_STATE/discard.log" 2>&1 &&
 		! ls "$esp/${IMAGE_ID}_$(v next)"*
 	'
 	test_expect_success 'no failed units' '

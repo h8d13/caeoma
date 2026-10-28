@@ -29,7 +29,7 @@ if test_stage 1; then
 	test_expect_success 'stage an update with state in /var' '
 		mkdir -p /var/lib/test &&
 		echo state > /var/lib/test/data &&
-		"$IMAGE_ID-update" --noconfirm -Q > "$TEST_STATE/update.log" 2>&1 ||
+		"$IMAGE_ID" update --noconfirm -Q > "$TEST_STATE/update.log" 2>&1 ||
 			{ cat "$TEST_STATE/update.log"; false; }
 	'
 	echo "$IMAGE_VERSION" > "$TEST_STATE/v0"

@@ -13,7 +13,7 @@ esp=/boot/EFI/Linux
 
 # Stage a no-op update (on the newest bootable one).
 stage() {
-	test_update "$1" --noconfirm -Q
+	test_update "$1" update --noconfirm -Q
 }
 
 v() {

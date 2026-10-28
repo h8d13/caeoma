@@ -39,7 +39,7 @@ if test_stage 1; then
 		test -n "$(ls -A /usr/share/man)" &&
 		echo "drop /usr/share/man/*" > "$local_rules/50-test.conf" &&
 		pacman --query --quiet | wc -l > "$TEST_STATE/packages" &&
-		"$IMAGE_ID-update" --noconfirm -Syu
+		"$IMAGE_ID" update --noconfirm -Syu
 	'
 	test_reboot
 fi
@@ -58,7 +58,7 @@ if test_stage 2; then
 	test_expect_success 'a drop of an essential path is refused' '
 		echo "drop /usr/lib/*" > "$local_rules/60-essential.conf" &&
 		versions="$(ls /system)" &&
-		! "$IMAGE_ID-update" --noconfirm -Syu &&
+		! "$IMAGE_ID" update --noconfirm -Syu &&
 		test "$(ls /system)" = "$versions"
 	'
 	rm -f "$local_rules/60-essential.conf"
