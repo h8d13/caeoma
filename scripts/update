@@ -388,14 +388,17 @@ phase() {
 
 mkdir --parents "$work"/{lower,upper,work,mnt,out}
 
-# metacopy=off: a metadata-only copy-up has no data to append.
+# The upper must hold everything that changed: metacopy=off, a
+# metadata-only copy-up has no data to append; redirect_dir=off, a renamed
+# dir is copied up whole instead of pointing at its lower name.
 mount -o ro "$current" "$work/lower"
 # mkfs.erofs takes the root inode from the upper (or merged) dir: keep the
 # image's, not mkdir's.
 chmod --reference="$work/lower" "$work/upper"
 chown --reference="$work/lower" "$work/upper"
 mount -t overlay overlay \
-	-o "lowerdir=$work/lower,upperdir=$work/upper,workdir=$work/work,metacopy=off" \
+	-o "lowerdir=$work/lower,upperdir=$work/upper,workdir=$work/work" \
+	-o metacopy=off,redirect_dir=off \
 	"$work/mnt"
 
 if [ -d "$state/glue" ]; then

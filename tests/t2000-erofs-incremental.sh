@@ -1,7 +1,7 @@
 #!/bin/bash
 # What the update relies on from mkfs.erofs --incremental: an overlay
 # upper appended to a reflinked copy of the lower image equals the merged
-# view. metacopy=off, --ovlfs-strip=1 (whiteouts become deletions), opaque
+# view. metacopy=off, redirect_dir=off, --ovlfs-strip=1 (whiteouts become deletions), opaque
 # dirs expanded to whiteouts first (mkfs.erofs ignores the xattr). Images
 # are 48bit, as the update builds its full images: without it the root
 # inode nid is 16 bits and a changed root dir can make --incremental fail,
@@ -49,8 +49,9 @@ round() {
 	local lower="$1" ops="$2" out="$3"
 	mkdir -p "$out".{lower,upper,work,mnt,check}
 	mount -o ro "$lower" "$out.lower" &&
-	mount -t overlay overlay -o \
-		"lowerdir=$w/$out.lower,upperdir=$w/$out.upper,workdir=$w/$out.work,metacopy=off" \
+	mount -t overlay overlay \
+		-o "lowerdir=$w/$out.lower,upperdir=$w/$out.upper,workdir=$w/$out.work" \
+		-o metacopy=off,redirect_dir=off \
 		"$out.mnt" &&
 	(cd "$out.mnt" && "$ops") &&
 	manifest "$out.mnt" > "$out.ref" &&
@@ -75,7 +76,7 @@ set_shared_bytes() {
 }
 
 # add, modify, delete file and dir, replace dir (opaque), chmod only,
-# rename, new nested dir, new symlink
+# rename file and dir, new nested dir, new symlink
 ops1() {
 	echo new > added.txt
 	echo changed > modify.txt
@@ -84,6 +85,7 @@ ops1() {
 	rm -r opaquedir && mkdir opaquedir && echo new > opaquedir/new1
 	chmod 600 chmod.txt
 	mv big.bin moved.bin
+	mv movedir renamed-dir
 	mkdir -p newdir/deep && echo x > newdir/deep/x
 	ln -s keep.txt link-to-keep
 }
@@ -111,6 +113,8 @@ test_expect_success 'base image' '
 	echo keep > base/keep.txt &&
 	echo original > base/modify.txt &&
 	echo gone > base/delete.txt &&
+	mkdir -p base/movedir &&
+	echo m > base/movedir/m &&
 	echo a > base/deldir/a &&
 	echo b > base/deldir/b &&
 	echo old > base/opaquedir/old1 &&
