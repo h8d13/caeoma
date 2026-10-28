@@ -1,0 +1,15 @@
+# The swapfile, made once on first boot (sized to the machine's RAM, which
+# the image cannot know), before swap-swapfile.swap enables it.
+
+[Unit]
+Description=Create the swapfile
+DefaultDependencies=no
+RequiresMountsFor=/swap
+ConditionPathExists=!/swap/swapfile
+Before=swap-swapfile.swap shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/__NAME__/mkswapfile /swap/swapfile

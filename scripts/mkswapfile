@@ -1,0 +1,18 @@
+#!/bin/bash
+# First boot: the swapfile in /swap (@swap), as large as the RAM, so a
+# hibernation image fits (logind writes where it went to an EFI variable,
+# the initrd resumes from it: no resume= needed). btrfs makes it NOCOW and
+# uncompressed, as a swapfile needs. Skipped, not failed, without the room
+# (the RAM and 1 GiB to spare): zram still swaps.
+# Usage: mkswapfile <path>
+
+set -eu
+
+file="$1"
+ram="$(awk '/^MemTotal:/ { print int($2 / 1024) }' /proc/meminfo)"
+free="$(df --block-size=1M --output=avail "$(dirname "$file")" | tail -n 1)"
+if [ "$free" -lt $((ram + 1024)) ]; then
+	echo "Not making $file: ${ram}M of RAM, ${free}M free"
+	exit 0
+fi
+btrfs filesystem mkswapfile --size "${ram}m" "$file"

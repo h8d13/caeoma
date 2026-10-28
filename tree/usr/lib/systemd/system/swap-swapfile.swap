@@ -1,0 +1,11 @@
+# The swapfile in @swap (__NAME__-swapfile makes it): below zram (priority
+# 100), for the overflow and hibernation.
+
+[Unit]
+Wants=__NAME__-swapfile.service
+After=__NAME__-swapfile.service
+ConditionPathExists=/swap/swapfile
+
+[Swap]
+What=/swap/swapfile
+Priority=10
