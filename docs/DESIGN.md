@@ -57,7 +57,7 @@ flowchart TD
 		ETC["/etc: image defaults, local<br/>edits/deletes copied up and kept"]
 		VM["var.mount: @var at /var<br/>(unit file: journald released at shutdown)"]
 		PAC["ID-state-generator (carry rules)<br/>/usr/lib/sysimage/pacman/local bound on /var/lib/pacman/local"]
-		SX["systemd-sysext Mutable=ephemeral<br/>anchor ext in /run<br/>writable /usr, lost at reboot"]
+		SX["systemd-sysext Mutable=yes, redirect_dir=off<br/>anchor ext in /run<br/>writable /usr, upper per version<br/>/var/lib/ID/usr/VER"]
 		SX --> PAC
 	end
 

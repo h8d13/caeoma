@@ -1,9 +1,11 @@
 # systemd-sysext runs before systemd-tmpfiles-setup, so its anchor
-# extension (the sysext tmpfiles entry) is created here, just ahead of it.
+# extension and the version's upper (the sysext tmpfiles entry) are
+# created here, just ahead of it.
 
 [Unit]
-Description=Anchor extension for the ephemeral writable /usr
+Description=Anchor extension and upper for the writable /usr
 DefaultDependencies=no
+RequiresMountsFor=/var/lib
 Before=systemd-sysext.service
 
 [Service]

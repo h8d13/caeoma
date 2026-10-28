@@ -2,8 +2,8 @@
 # carry rules (/usr/lib/__NAME__/state): bind /usr/lib/sysimage/<x> back to
 # /var/lib/<x>, as NixOS impermanence generates its bind mounts. A bind,
 # not a symlink: libalpm replaces a symlinked local/ with a directory of
-# only its new entries. After the ephemeral sysext /usr is merged, so live
-# writes (pacman -S on the box) stay throwaway with it.
+# only its new entries. After the sysext /usr is merged, so live writes
+# (pacman -S on the box) land in the version's upper with the files.
 
 set -eu
 

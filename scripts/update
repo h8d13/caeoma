@@ -257,14 +257,15 @@ discard() {
 	done
 }
 
-# Image (immutable: tmpfiles, install_next; lifted only to delete) and UKI
-# of version $1.
+# Image (immutable: tmpfiles, install_next; lifted only to delete), UKI
+# and /usr upper (the box's writes on top of it) of version $1.
 remove_version() {
 	chattr -i "/system/${IMAGE_ID}_$1.erofs"
 	rm "/system/${IMAGE_ID}_$1.erofs"
 	rm --force "/boot/EFI/Linux/${IMAGE_ID}_$1.efi" \
 		"/boot/EFI/Linux/${IMAGE_ID}_$1+"*.efi \
 		"/boot/EFI/Linux/${IMAGE_ID}_$1-fallback"*.efi
+	rm --recursive --force "${state:?}/usr/${1:?}"
 }
 
 # Unbootable versions first, they would count towards $keep: leftovers of
