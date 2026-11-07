@@ -13,11 +13,12 @@ set -e
 out="$1"
 : "${IMAGE_ID:?}" "${IMAGE_VERSION:?}"
 
+# ID=arch: an Arch system to Arch tooling (archinstoo, pacman hooks);
+# IMAGE_ID names it for the boot menu and this glue
 cat > /usr/lib/os-release <<- EOF
 	NAME="${IMAGE_ID^}"
 	PRETTY_NAME="${IMAGE_ID^} $IMAGE_VERSION"
-	ID=$IMAGE_ID
-	ID_LIKE=arch
+	ID=arch
 	DEFAULT_HOSTNAME=$IMAGE_ID
 	IMAGE_ID=$IMAGE_ID
 	IMAGE_VERSION=$IMAGE_VERSION
