@@ -23,7 +23,6 @@ flowchart TD
 			HOME["@home = /home (rw)"]
 			VAR["@var = /var (rw)"]
 			ETCU["@etc = /etc overlay upper (rw)"]
-			SWAP["@swap = /swap<br/>swapfile (first boot, RAM size)"]
 		end
 	end
 
@@ -33,7 +32,6 @@ flowchart TD
 	PO --> HOME
 	PO --> VAR
 	PO --> ETCU
-	PO --> SWAP
 
 	subgraph BOOT["Boot"]
 		SB["sd-boot picks UKI (boot counting +3):<br/>newest good; a spent host-only UKI<br/>falls back to its version's fallback"]
